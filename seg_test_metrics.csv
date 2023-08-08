@@ -1,0 +1,2 @@
+window_size,sub_window_size,test_accuracy,test_F1,test_TPR,test_FPR
+30,5,0.7961538461538461,0.9613852649506154,0.0,0.548936170212766
