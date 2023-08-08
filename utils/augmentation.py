@@ -6,6 +6,18 @@ from typing import Union, List, Tuple
 
 
 def gen_random_curves(length: int, num_curves: int, sigma=0.2, knot=4):
+    """
+    Generate random curves using CubicSpline interpolation.
+
+    Args:
+        length:
+        num_curves:
+        sigma:
+        knot:
+
+    Returns:
+        array shape [length, num curves]
+    """
     xx = np.arange(0, length, (length - 1) / (knot + 1))
     yy = np.random.normal(loc=1.0, scale=sigma, size=(knot + 2, num_curves))
     x_range = np.arange(length)
@@ -39,23 +51,64 @@ def format_range(x: any, start_0: bool) -> np.ndarray:
 
 class Augmentation:
     def __init__(self, p=1):
+        """
+        Initialize the base Augmentation class.
+
+        Args:
+            p (float): Probability of applying the augmentation.
+        """
         self.p = p
 
     def apply(self, data):
+        """
+        Apply the augmentation to the given data.
+
+        Args:
+            data (np.ndarray)
+
+        Returns:
+            np.ndarray: Augmented data.
+        """
         if (np.random.rand() < self.p) or (self.p >= 1):  # Only augment the data with probability p
             return self.augment(data)
         else:
             return data
 
     def augment(self, data):
+        """
+        Abstract method to apply the augmentation.
+
+        Args:
+            data (np.ndarray): Input data to be augmented.
+
+        Returns:
+            np.ndarray: Augmented data.
+        """
         raise NotImplementedError
 
 
 class Augmenter:
     def __init__(self, augmentations):
+        """
+        Initialize the Augmenter class.
+
+        Args:
+            augmentations (list): List of augmentation instances.
+        """
         self.augmentations = augmentations
 
     def apply(self, data, label=None):
+        """
+        Apply a list of augmentations to the data and label (if provided).
+
+        Args:
+            data (np.ndarray): Input data to be augmented.
+            label: Label associated with the data, if available.
+
+        Returns:
+            np.ndarray: Augmented data.
+            label: Augmented label (if available).
+        """
         for augment in self.augmentations:
             if label is not None:
                 if augment == 'RandSampleSeg' or augment == 'TimewarpSeg' or augment == 'PermutationSeg':
@@ -69,6 +122,11 @@ class Augmenter:
 
 class Jitter(Augmentation):
     def __init__(self, sigma=0.05, p=1):
+        """
+        Args:
+            sigma (float): Standard deviation of the noise added to the data.
+            p (float): Probability of applying the augmentation.
+        """
         super().__init__(p)
         self.sigma = sigma
 
@@ -81,6 +139,11 @@ class Jitter(Augmentation):
 
 class Scale(Augmentation):
     def __init__(self, sigma=0.1, p=1):
+        """
+        Args:
+            sigma (float): Standard deviation of the scaling factor.
+            p (float): Probability of applying the augmentation.
+        """
         super().__init__(p)
         self.sigma = sigma
 
@@ -92,6 +155,12 @@ class Scale(Augmentation):
 
 class MagnitudeWarp(Augmentation):
     def __init__(self, sigma=0.2, knot=4, p=1.0):
+        """
+        Args:
+            sigma (float): Standard deviation of the magnitude warp curves.
+            knot (int): Number of knots for generating the random curves.
+            p (float): Probability of applying the augmentation.
+        """
         super().__init__(p)
         self.sigma = sigma
         self.knot = knot
@@ -207,7 +276,7 @@ class TimewarpSeg(Augmentation):
             np.interp(x_range, tt_new, org_data[:, i]) for i in range(org_data.shape[-1])
         ]).T
 
-        labels = np.interp(x_range, tt_new, labels)  # 对标签也进行相同的扭曲
+        labels = np.interp(x_range, tt_new, labels)
         return data, labels
 
 
@@ -256,9 +325,9 @@ class PermutationSeg(Augmentation):
         pp = 0
         for ii in range(self.n_perm):
             x_temp = data[segs[idx[ii]]:segs[idx[ii] + 1], :]
-            y_temp = labels[segs[idx[ii]]:segs[idx[ii] + 1]]  # 获取相应的标签
+            y_temp = labels[segs[idx[ii]]:segs[idx[ii] + 1]]
             data_new[pp:pp + len(x_temp), :] = x_temp
-            labels_new[pp:pp + len(y_temp)] = y_temp  # 对标签也进行相同的打乱
+            labels_new[pp:pp + len(y_temp)] = y_temp
             pp += len(x_temp)
         return data_new, labels_new
 
@@ -299,5 +368,5 @@ class RandSampleSeg(Augmentation):
             np.interp(x_range, tt_new, org_data[tt_new, i]) for i in range(org_data.shape[-1])
         ]).T
 
-        labels = labels[tt_new]  # 对标签进行相同的抽样
+        labels = labels[tt_new]
         return data, labels

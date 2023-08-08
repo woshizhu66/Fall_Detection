@@ -1,28 +1,31 @@
 import pandas as pd
-from torch import nn
 from tqdm import tqdm
 import torch.nn.functional as F
-from tcn import TemporalConvNet, TCNSeg
+from utils.tcn import TCNSeg
 import os
 import numpy as np
 import torch
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.dataset import random_split
-from torch.optim import Adam
-from tcn import TCN
-import seaborn as sns
+from torch.utils.data import DataLoader
 from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
-import matplotlib.pyplot as plt
-from data_load_and_EarlyStop import EarlyStopping, BasicArrayDataset, ResampleArrayDataset, ResampleArrayDatasetSeg, \
+from utils.data_load_and_EarlyStop import EarlyStopping, ResampleArrayDatasetSeg, \
     BasicArrayDatasetSeg
-import utils.augmentation as aug
 
 
 def process_data_for_segmentation(root_dir, window_length, subwindow_length):
-    sample_rate = 50  # 采样频率
-    samples_per_subwindow = subwindow_length * sample_rate  # 每个子窗口的样本数
-    num_subwindows = int(window_length // subwindow_length)  # 一个窗口中的子窗口数
+    """
+    Process data for segmentation into subwindows with labels.
+
+    Args:
+        root_dir (str): Root directory containing data files.
+        window_length (float): Total length of the window in seconds.
+        subwindow_length (float): Length of each subwindow in seconds.
+
+    Returns:
+        tuple: Tuple containing training, validation, and test data arrays with labels.
+    """
+    sample_rate = 50  # Sampling rate
+    samples_per_subwindow = subwindow_length * sample_rate  # number of samples per subwindow
+    num_subwindows = int(window_length // subwindow_length)  # number of subwindows in a window
 
     windows = []
     labels = []
@@ -31,22 +34,22 @@ def process_data_for_segmentation(root_dir, window_length, subwindow_length):
         folder_path = os.path.join(root_dir, folder)
         for file in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file)
-            arr = np.load(file_path)[:, :, 1:]  # 加载数据
-            fall = folder.endswith('_fall')  # 检查是否为跌倒
+            arr = np.load(file_path)[:, :, 1:]
+            fall = folder.endswith('_fall')
 
             for window in arr:
                 subwindow_labels = []
                 subwindows = []
                 for i in range(num_subwindows):
-                    start = i * samples_per_subwindow  # 子窗口的开始
-                    end = start + samples_per_subwindow  # 子窗口的结束
-                    subwindow = window[start:end, :]  # 提取子窗口
+                    start = i * samples_per_subwindow  # start of child window
+                    end = start + samples_per_subwindow  # end of child window
+                    subwindow = window[start:end, :]  # Extract child window
 
                     subwindows.append(subwindow)
 
-                    # 如果这个子窗口在跌倒事件发生的3秒内，则标记为跌倒
-                    # 否则，标记为非跌倒
-                    if fall and i < 1:  # 这里我们检查跌倒是否在前3秒发生
+                    # If this subwindow is within 3 seconds of a fall event, mark it as fallen
+                    # Otherwise, mark as non-falling
+                    if fall and i < 1:  # Check if the fall happened in the first 3 seconds
                         subwindow_labels.append(1)
                     else:
                         subwindow_labels.append(0)
@@ -89,6 +92,18 @@ def process_data_for_segmentation(root_dir, window_length, subwindow_length):
 
 
 def calculate_metrics(actuals, predictions):
+    """
+    Calculate metrics for evaluating model performance.
+
+    Args:
+        actuals (array-like): Ground truth labels.
+        predictions (array-like): Predicted labels.
+
+    Returns:
+        tuple: True positive count, true negative count, false positive count,
+               false negative count, and weighted F1 score.
+    """
+
     # Flatten the arrays if they have more than one dimension
     actuals = np.asarray(actuals).flatten()
     predictions = np.asarray(predictions).flatten()
@@ -109,6 +124,27 @@ class SegmentationModel:
     def __init__(self, dataset_path, batch_size_train, batch_size_valid, window_length, subwindow_length,
                  batch_size_test, input_size, output_size,
                  num_channels, kernel_size, dropout, learning_rate, num_epochs, model_save_path, augmenter, aug_name):
+        """
+            Initialize the SegmentationModel.
+
+            Args:
+                dataset_path (str): Path to the dataset directory.
+                batch_size_train (int): Batch size for training.
+                batch_size_valid (int): Batch size for validation.
+                window_length (float): Length of the sliding window.
+                subwindow_length (float): Length of each subwindow within the sliding window.
+                batch_size_test (int): Batch size for testing.
+                input_size (int): Size of the input data.
+                output_size (int): Size of the output data.
+                num_channels (int): Number of channels in the model.
+                kernel_size (int): Size of the convolutional kernel.
+                dropout (float): Dropout probability.
+                learning_rate (float): Learning rate for optimization.
+                num_epochs (int): Number of training epochs.
+                model_save_path (str): Path to save the trained model.
+                augmenter: Augmenter object.
+                aug_name (str): Name of the augmentation technique.
+            """
         self.augmenter = augmenter
         self.dataset_path = dataset_path
         self.batch_size_train = batch_size_train

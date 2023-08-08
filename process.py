@@ -171,7 +171,8 @@ class Process:
         Write all sequences into npy files
 
         Args:
-            data: list of np arrays, each array is a sequence of shape [num windows, window length, 4(msec,x,y,z)]
+            data: list of np arrays, each array is a sequence of shape [num windows, window length,
+            10(msec,feature_x,feature_y,feature_Z)]
             label: label of this data
         """
         num_digits = len(str(len(data)))
@@ -271,7 +272,7 @@ class KFall(Process):
             label_row: a row in the label df, label of this data df
 
         Returns:
-            numpy array shape [num windows, window length, 4(msec,x,y,z)]
+            numpy array shape [num windows, window length, 10(msec,feature_x,feature_y,feature_Z)]
         """
         # get label in msec
         fall_onset_frame = label_row.at['Fall_onset_frame']
@@ -365,14 +366,20 @@ class FallAllD(Process):
     FALL_TASK_ID = set('%02d' % n for n in range(101, 136))
 
     def _read_data(self, add):
+        # Change the working directory to the specified 'add'
         os.chdir(add)
+
+        # Get a list of all file names in the 'add' directory
         FileNamesAll = os.listdir(add)
+
+        # Filter out file names that end with '_A.dat'
         FileNames = []
         for f_name in FileNamesAll:
             if f_name.endswith('_A.dat'):
                 FileNames.append(f_name)
         LL = len(FileNames)
 
+        # Initialize lists to store various data attributes
         l_SubjectID = []
         l_Device = []
         l_ActivityID = []
@@ -382,14 +389,22 @@ class FallAllD(Process):
         l_Mag = []
         l_Bar = []
 
+        # Loop through each file and extract relevant information
         for i in range(LL):
             f_name = FileNames[i]
+            # Extract SubjectID from the file name
             SubjectID = int(f_name[1:3])
             l_SubjectID.append(np.uint8(SubjectID))
+
+            # Extract ActivityID from the file name
             ActivityID = int(f_name[8:11])
             l_ActivityID.append(np.uint8(ActivityID))
+
+            # Extract TrialNo from the file name
             TrialNo = int(f_name[13:15])
             l_TrialNo.append(np.uint8(TrialNo))
+
+            # Determine the device type based on the file name
             Device = ''
             if (int(f_name[5]) == 1):
                 Device = 'Neck'
@@ -400,29 +415,46 @@ class FallAllD(Process):
                     Device = 'Waist'
             l_Device.append(Device)
 
+            # Load accelerometer data from the file
             l_Acc.append(np.int16(genfromtxt(f_name, delimiter=',')))
             chArr = list(f_name)
             chArr[16] = 'G'
             f_name = "".join(chArr)
             l_Gyr.append(np.int16(genfromtxt(f_name, delimiter=',')))
+
+            # Load gyroscope data from the file
             chArr = list(f_name)
             chArr[16] = 'M'
             f_name = "".join(chArr)
             l_Mag.append(np.int16(genfromtxt(f_name, delimiter=',')))
+
+            # Load magnetometer data from the file
             chArr = list(f_name)
             chArr[16] = 'B'
             f_name = "".join(chArr)
             l_Bar.append(genfromtxt(f_name, delimiter=','))
             print(f'File  {i + 1}  out of {len(FileNames)}')
 
-        FallAllD = pd.DataFrame(list(zip(l_SubjectID, l_Device, l_ActivityID, l_TrialNo, l_Acc, l_Gyr, l_Mag, l_Bar)),
-                                columns=['SubjectID', 'Device', 'ActivityID', 'TrialNo', 'Acc', 'Gyr', 'Mag', 'Bar'])
+        activity_id_series = pd.Series(l_ActivityID, dtype=np.int16)
+        FallAllD = pd.concat([
+            pd.Series(l_SubjectID),
+            pd.Series(l_Device),
+            activity_id_series,
+            pd.Series(l_TrialNo),
+            pd.Series(l_Acc),
+            pd.Series(l_Gyr),
+            pd.Series(l_Mag),
+            pd.Series(l_Bar),
+        ], axis=1)
+
+        FallAllD.columns = ['SubjectID', 'Device', 'ActivityID', 'TrialNo', 'Acc', 'Gyr', 'Mag', 'Bar']
+
         return FallAllD
 
     def process_device_data(self, device, msec1, msec2, index, fall_all_d, crop_time=None):
         """
         Process the device data and return a DataFrame containing the processed data.
-        [Neck, Wrist, Waist]
+
         Args:
             device (str): The device type ('Neck', 'Waist', or 'Wrist').
             msec1 (numpy.array): The array containing the msec values for df1.
@@ -432,6 +464,7 @@ class FallAllD(Process):
 
         Returns:
             DataFrame: A DataFrame containing the processed device data.
+            [msec,Neck[9], Wrist[9], Waist[9]]
         """
         if device == 'Neck':
             neck_Acc_x = fall_all_d['Acc'][index][:, 0]
@@ -534,40 +567,47 @@ class FallAllD(Process):
 
     def run(self):
         FallAllD = self._read_data(self.raw_folder)
-        # 先计算msec1和msec2的值
+
+        # Calculate values for msec1 and msec2
         msec1 = np.arange(0, 20, 1 / 238) * 1000
         msec2 = np.arange(0, 20, 1 / 80) * 1000
+
+        # Initialize lists to store sequences
         all_fall_sequences = []
         all_adl_sequences = defaultdict(list)
+
+        # Get unique subject, activity, and trial IDs
         unique_subjects = FallAllD['SubjectID'].drop_duplicates().tolist()
         unique_activities = FallAllD['ActivityID'].drop_duplicates().tolist()
         unique_trials = FallAllD['TrialNo'].drop_duplicates().tolist()
-        # 获取最后35个独特的ActivityID
+
+        # Get the last 35 unique ActivityIDs
         last_35_activities = sorted(unique_activities)[-35:]
 
+        # Loop through unique subjects, activities, and trials
         for sub in unique_subjects:
             for act in unique_activities:
                 for tri in unique_trials:
-                    # 获取指定条件的数据子集
+                    # Get the subset of data based on specific conditions
                     subset_df = FallAllD.loc[(FallAllD['SubjectID'] == sub) &
                                              (FallAllD['ActivityID'] == act) &
                                              (FallAllD['TrialNo'] == tri)]
 
                     label = 'non_fall'
-                    # 检查subset_df是否不为空，并且'device'的唯一值数量为3
+                    # Check if subset_df is not empty and 'Device' has 3 unique values
                     if not subset_df.empty and subset_df['Device'].nunique() == 3:
                         merged = None
                         dataframes_to_merge = []
 
+                        # Loop through the subset_df and process each device data
                         for index, value in subset_df.iterrows():
-                            # 如果ActivityID属于特定的ID
                             if act in last_35_activities:
-                                # 将数据限制为8000ms
+                                # Limit data to 8000ms for specific ActivityIDs
                                 temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
                                                                    8000)
                                 label = 'fall'
                             elif act in [102, 104, 108, 110, 116, 118, 120, 122, 124, 126, 128]:
-                                # 将数据限制为7000ms
+                                # Limit data to 7000ms for specific ActivityIDs
                                 temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
                                                                    8000)
                             else:
@@ -575,11 +615,13 @@ class FallAllD(Process):
 
                             dataframes_to_merge.append(temp_df)
 
-                        # 进行合并
+                        # Merge the processed dataframes
                         if dataframes_to_merge:
                             merged = pd.merge(dataframes_to_merge[0], dataframes_to_merge[1], on='msec')
                             merged = pd.merge(merged, dataframes_to_merge[2], on='msec')
                             merged_arr = merged.to_numpy()
+
+                            # Append sequences based on the label
                             if label == 'fall':
                                 windows = sliding_window(merged_arr, window_size=self.window_size_row,
                                                          step_size=int(0.5 * self.signal_freq * 1000))
@@ -597,13 +639,28 @@ class FallAllD(Process):
 
 
 class Erciyes(Process):
-    # 定义一个处理函数
     def process_txt_file(self, file_path, prefix):
+        """
+        Process a TXT file containing sensor data.
+
+        Args:
+            file_path (str): Path to the TXT file.
+            prefix (str): Prefix to add to column names.
+
+        Returns:
+            pd.DataFrame: Processed DataFrame with renamed columns and resampled timestamps.
+        """
+        # Columns to read from the TXT file
         cols_to_read = ['Counter', 'Acc_X', 'Acc_Y', 'Acc_Z', 'Gyr_X', 'Gyr_Y', 'Gyr_Z', 'Mag_X', 'Mag_Y', 'Mag_Z',
                         'Roll', 'Pitch', 'Yaw']
 
+        # Read the TXT file into a DataFrame, skip the first 4 rows, and select specified columns
         df = pd.read_csv(file_path, delimiter='\t', skiprows=4, usecols=cols_to_read)
-        df['Counter'] = df['Counter'] * 40  # convert to msec (because frequency is 25Hz)
+
+        # Convert the 'Counter' values to milliseconds (25Hz frequency)
+        df['Counter'] = df['Counter'] * 40
+
+        # Rename columns and add the provided prefix to each column name
         new_columns = {
             'Counter': 'msec',
             'Acc_X': prefix + 'Acc_x',
@@ -620,6 +677,8 @@ class Erciyes(Process):
             'Yaw': prefix + 'euler_y'
         }
         df.rename(columns=new_columns, inplace=True)
+
+        # Rename columns and add the provided prefix to each column name
         df = self.resample(df, timestamp_col='msec')
         return df
 
@@ -631,8 +690,6 @@ class Erciyes(Process):
                 for sub_folder in os.listdir(test_export_path):
                     test_path = os.path.join(test_export_path, sub_folder)
                     for test in os.listdir(test_path):
-                        # 如果路径中含有"Fail"，跳过此次迭代
-
                         if 'Fail' in test:
                             continue
                         activity = 'fall' if sub_folder.startswith('9') else 'non_fall' if sub_folder.startswith(
@@ -662,7 +719,7 @@ class Erciyes(Process):
 
 
 if __name__ == '__main__':
-    # for sec in [30, 31, 32, 33, 34, 35]:
+    # for sec in [2.5, 4, 5, 6, 7, 8]:
     #     KFall(
     #         max_window_per_fall=3,
     #         raw_folder='C:/Repository/master/Raw_Dataset/KFall',
@@ -671,18 +728,18 @@ if __name__ == '__main__':
     #         signal_freq=50, window_size_sec=sec
     #     ).run()
 
-    # for sec in range(4, 9):
-    #     FallAllD(
-    #         raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
-    #         name='FallAllD',
-    #         destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec{sec}',
-    #         signal_freq=50, window_size_sec=sec
-    #     ).run()
+    for sec in range(4, 9):
+        FallAllD(
+            raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
+            name='FallAllD',
+            destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec{sec}',
+            signal_freq=50, window_size_sec=sec
+        ).run()
 
-    Erciyes(
-        raw_folder=
-        'C:/Repository/master/Raw_Dataset/Erciyes/simulated+falls+and+daily+living+activities+data+set/Tests',
-        name='Erciyes',
-        destination_folder=f'C:/Repository/master/Processed_Dataset/Erciyes',
-        signal_freq=50
-    ).run()
+    # Erciyes(
+    #     raw_folder=
+    #     'C:/Repository/master/Raw_Dataset/Erciyes/simulated+falls+and+daily+living+activities+data+set/Tests',
+    #     name='Erciyes',
+    #     destination_folder=f'C:/Repository/master/Processed_Dataset/Erciyes',
+    #     signal_freq=50
+    # ).run()
