@@ -199,7 +199,7 @@ class EarlyStopping:
         Args:
             save_path :
             patience (int): How long to wait after last time validation loss improved.
-                            Default: 7
+                            Default: 10
             verbose (bool): If True, prints a message for each validation loss improvement.
                             Default: False
             delta (float): Minimum change in the monitored quantity to qualify as an improvement.
@@ -237,5 +237,5 @@ class EarlyStopping:
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
         path = os.path.join(self.save_path, f'model_size{self.window_size}_epoch{epoch}.pth')
-        torch.save(model.state_dict(), path)  # 这里会存储迄今最优模型的参数
+        torch.save(model.state_dict(), path)
         self.val_loss_min = val_loss

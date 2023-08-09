@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 import pandas as pd
 import torch
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from torch.utils.data import DataLoader
 
 from utils.data_load_and_EarlyStop import ResampleArrayDataset, BasicArrayDataset, EarlyStopping
@@ -83,12 +83,19 @@ class ClassificationModel2:
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
 
         # Create a dictionary to store the metrics during training
+        # Create a dictionary to store the metrics during training
         metrics = {
             'epoch': [],
             'train_loss': [],
             'valid_loss': [],
             'valid_accuracy': [],
-            'valid_f1': []
+            'valid_f1': [],
+            'valid_TPR': [],
+            'valid_FPR': [],
+            'valid_FP': [],
+            'valid_FN': [],
+            'valid_TP': [],
+            'valid_TN': []
         }
 
         # Training loop
@@ -149,6 +156,12 @@ class ClassificationModel2:
             valid_accuracy = accuracy_score(valid_labels, valid_outputs)
             valid_f1 = f1_score(valid_labels, valid_outputs, average='weighted')
 
+            # Compute confusion matrix and extract metrics
+            valid_confusion = confusion_matrix(valid_labels, valid_outputs)
+            valid_FP, valid_FN, valid_TP, valid_TN = cal_tp_tn_fp_fn(valid_confusion)
+            valid_TPR = valid_TP / (valid_TP + valid_FN)  # Sensitivity
+            valid_FPR = valid_FP / (valid_FP + valid_TN)  # false positive rate
+
             print('Epoch [{}/{}], train_Loss: {:.4f}, valid_Loss: {:.4f}, accuracy: {:.4f}, f1 score: {:.4f}'.format(
                 epoch + 1, self.num_epochs, train_loss / len(train_loader), valid_loss, valid_accuracy, valid_f1))
 
@@ -158,7 +171,12 @@ class ClassificationModel2:
             metrics['valid_loss'].append(valid_loss)
             metrics['valid_accuracy'].append(valid_accuracy)
             metrics['valid_f1'].append(valid_f1)
-
+            metrics['valid_TPR'] = valid_TPR  # Added metric
+            metrics['valid_FPR'] = valid_FPR  # Added metric
+            metrics['valid_FP'] = valid_FP  # Added metric
+            metrics['valid_FN'] = valid_FN  # Added metric
+            metrics['valid_TP'] = valid_TP  # Added metric
+            metrics['valid_TN'] = valid_TN  # Added metric
             # 早停止
             early_stopping(epoch, valid_loss, model)
             # 达到早停止条件时，early_stop会被置为True
@@ -218,7 +236,7 @@ class ClassificationModel2:
 if __name__ == "__main__":
     root_dir = 'C:/Repository/master/Processed_Dataset/FallAllD'
 
-    load_methods = ['wrist', 'waist', 'waist_wrist']
+    load_methods = ['waist', 'wrist',  'waist_wrist']
 
     augmenter = None
     test_metrics = {
@@ -245,35 +263,34 @@ if __name__ == "__main__":
 
         for folder in os.listdir(root_dir):
             folder_path = os.path.join(root_dir, folder)
-            print(folder_path)
-            # window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel2(
-            #     dataset_path=folder_path,
-            #     batch_size_train=8,
-            #     batch_size_valid=16,
-            #     batch_size_test=16,
-            #     input_size=input_size,
-            #     output_size=1,
-            #     flatten_method="mean",
-            #     num_channels=(64,) * 3 + (128,) * 2,
-            #     kernel_size=2,
-            #     dropout=0.5,
-            #     load_method=load,
-            #     learning_rate=0.01,
-            #     num_epochs=30,
-            #     model_save_path=f"./fallAllD_cla_model_{load}",
-            #     augmenter=augmenter,
-            #     aug_name=load
-            # ).run()
-            # test_metrics['load_method'].append(load)
-            # test_metrics['window_size'].append(window_size)
-            # test_metrics['test_accuracy'].append(accuracy)
-            # test_metrics['test_F1'].append(F1)
-            # test_metrics['test_TPR'].append(TPR)
-            # test_metrics['test_FPR'].append(FPR)
-            # test_metrics['FP'].append(FP)
-            # test_metrics['FN'].append(FN)
-            # test_metrics['TP'].append(FP)
-            # test_metrics['TN'].append(FP)
-            # print(test_metrics)
+            window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel2(
+                dataset_path=folder_path,
+                batch_size_train=8,
+                batch_size_valid=16,
+                batch_size_test=16,
+                input_size=input_size,
+                output_size=1,
+                flatten_method="mean",
+                num_channels=(64,) * 3 + (128,) * 2,
+                kernel_size=2,
+                dropout=0.5,
+                load_method=load,
+                learning_rate=0.01,
+                num_epochs=30,
+                model_save_path=f"./fallAllD_cla_model_{load}",
+                augmenter=augmenter,
+                aug_name=load
+            ).run()
+            test_metrics['load_method'].append(load)
+            test_metrics['window_size'].append(window_size)
+            test_metrics['test_accuracy'].append(accuracy)
+            test_metrics['test_F1'].append(F1)
+            test_metrics['test_TPR'].append(TPR)
+            test_metrics['test_FPR'].append(FPR)
+            test_metrics['FP'].append(FP)
+            test_metrics['FN'].append(FN)
+            test_metrics['TP'].append(FP)
+            test_metrics['TN'].append(FP)
+            print(test_metrics)
     df_metrics = pd.DataFrame(test_metrics)
     df_metrics.to_csv(f'./fallAllD_cla_test_metrics_load_methods.csv', index=False)
