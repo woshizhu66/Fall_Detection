@@ -233,10 +233,11 @@ class ClassificationModel2:
         print('Test Accuracy: {:.4f}, F1 score: {:.4f}, TPR: {:.4f}, FPR: {:.4f}'.format(accuracy, F1, TPR, FPR))
         return window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN
 
+
 if __name__ == "__main__":
     root_dir = 'C:/Repository/master/Processed_Dataset/FallAllD'
 
-    load_methods = ['waist', 'wrist',  'waist_wrist']
+    load_methods = ['waist', 'wrist', 'waist_wrist']
 
     augmenter = None
     test_metrics = {
