@@ -718,6 +718,56 @@ class Erciyes(Process):
                                 combined_df.to_parquet(output_path, index=False)
 
 
+class RealData(Process):
+    def _read_data(self, file_path):
+        X0 = np.load(file_path)
+        imu_mat = X0["imu_mat"]
+        imu_time_utc = X0["imu_time_utc"]
+
+        if len(imu_time_utc) > len(imu_mat[:, 0]):
+            imu_time_utc = imu_time_utc[:len(imu_mat[:, 0])]
+        elif len(imu_time_utc) < len(imu_mat[:, 0]):
+            imu_mat = imu_mat[:len(imu_time_utc), :]
+        df = pd.DataFrame({
+            'msec': imu_time_utc.astype(int),
+            'acc_x': imu_mat[:, 0],
+            'acc_y': imu_mat[:, 1],
+            'acc_z': imu_mat[:, 2]
+        })
+        return df
+
+    def run(self):
+        ground_truth_file = os.path.join(self.raw_folder, 'falls_groundtruth.csv')
+        fall_dir = os.path.join(self.destination_folder, 'fall')
+        non_fall_dir = os.path.join(self.destination_folder, 'non_fall')
+
+        # Load the falls_groundtruth.csv file
+        ground_truth_df = pd.read_csv(ground_truth_file)
+        for filename in tqdm(os.listdir(self.raw_folder)):
+            if filename.endswith(".npz"):
+                file_path = os.path.join(self.raw_folder, filename)
+                # Get the va_id from the filename (e.g., 161017_va_5_motio_15_raw.npz)
+                va_id = int(filename.split('_')[-4])
+
+                df = self._read_data(file_path)
+                save_dir = non_fall_dir
+
+                # Check if the imu_time_utc matches any ts_fall_utc in ground_truth_df
+                if va_id in ground_truth_df['va_id'].values:
+                    matching_row = ground_truth_df[ground_truth_df['va_id'] == va_id]
+                    for idx, data in matching_row.iterrows():
+                        if data['ts_fall_utc'] in df['msec'].values:
+                            save_dir = fall_dir
+                            break
+
+                # Save the DataFrame to the appropriate folder
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+                file_index = len(os.listdir(save_dir))
+                save_path = os.path.join(save_dir, f'{file_index}.parquet')
+                df.to_parquet(save_path, index=False)
+
+
 if __name__ == '__main__':
     # for sec in [2.5, 4, 5, 6, 7, 8]:
     #     KFall(
@@ -728,13 +778,13 @@ if __name__ == '__main__':
     #         signal_freq=50, window_size_sec=sec
     #     ).run()
 
-    for sec in range(4, 9):
-        FallAllD(
-            raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
-            name='FallAllD',
-            destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec{sec}',
-            signal_freq=50, window_size_sec=sec
-        ).run()
+    # for sec in range(4, 9):
+    #     FallAllD(
+    #         raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
+    #         name='FallAllD',
+    #         destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec{sec}',
+    #         signal_freq=50, window_size_sec=sec
+    #     ).run()
 
     # Erciyes(
     #     raw_folder=
@@ -743,3 +793,11 @@ if __name__ == '__main__':
     #     destination_folder=f'C:/Repository/master/Processed_Dataset/Erciyes',
     #     signal_freq=50
     # ).run()
+
+    RealData(
+        raw_folder=
+        'C:/Repository/master/Raw_Dataset/ohsu-ms-fall-data/ms_ohsu_raw_imu_data_04152018',
+        name='RealData',
+        destination_folder=f'C:/Repository/master/Processed_Dataset/RealData',
+        signal_freq=50
+    ).run()

@@ -5,27 +5,23 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import accuracy_score, f1_score
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from fallAllD_classification import load_dataset_with_wrist, load_dataset_with_waist, load_dataset_with_waist_wrist
 from kfall_classification import plot_confusion, cal_tp_tn_fp_fn
 from process import sliding_window
-from utils.data_load_and_EarlyStop import BasicArrayDataset
 from utils.tcn import TCN
 
 
 class Tester:
-    def __init__(self, model, model_path, test_data_path, train_window_size, test_window_size, columns):
+    def __init__(self, model, model_path, test_data_path, window_size, step_size, columns):
         self.model = model
         self.model_path = model_path
         self.test_data_path = test_data_path
-        self.train_window_size = train_window_size
-        self.test_window_size = test_window_size
+        self.window_size = window_size
+        self.step_size = step_size
         self.columns = columns
 
     def load_model(self):
-        # 加载保存的模型权重
         model_weights = torch.load(self.model_path)
         self.model.load_state_dict(model_weights)
         self.model.eval()
@@ -33,7 +29,7 @@ class Tester:
     def get_windows_from_df(self, file: str) -> torch.Tensor:
         df = pd.read_parquet(file)
         arr = df[self.columns].to_numpy()
-        windows = sliding_window(arr, window_size=200, step_size=100)
+        windows = sliding_window(arr, window_size=self.window_size, step_size=self.step_size)
         windows = torch.from_numpy(windows).float()
         return windows
 
@@ -44,7 +40,7 @@ class Tester:
 
     def test(self):
         list_data_files = glob(self.test_data_path)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
         self.model.to(device)
 
         predictions = []
@@ -72,7 +68,9 @@ class Tester:
 
         return accuracy, F1, TPR, FPR, FP, FN, TP, TN
 
-    def repeat_test(self, n_times=5):
+    def run(self, n_times=1):
+        self.load_model()
+
         accuracies = []
         f1_scores = []
         TPRs = []
@@ -100,23 +98,18 @@ class Tester:
 
 
 if __name__ == "__main__":
-    model = TCN(3, 1, (64,) * 3 + (128,) * 2, 2, 0.5, "mean")
-    columns_to_use = ['waist_Acc_x', 'waist_Acc_y', 'waist_Acc_z']
 
-    male_path = "C:/Repository/master/Processed_Dataset/Erciyes/man/*/*.parquet"
-    female_path = "C:/Repository/master/Processed_Dataset/Erciyes/woman/*/*.parquet"
-    total = 'C:/Repository/master/Processed_Dataset/Erciyes/*/*/*.parquet'
 
-    paths_and_names = [(male_path, "male"), (female_path, "female"), (total, "both male and female")]
+    model = TCN(3, 1, (64,) * 5 + (128,) * 2, 2, 0.5, "mean")
+    columns_to_use = ['acc_x', 'acc_y', 'acc_z']
 
-    for path, name in paths_and_names:
-        print(f"Testing for {name}...")
-        tester = Tester(
-            model=model,
-            model_path="C:/Users/46270/PycharmProjects/pythonProject3/new_cla_model_acc/model_size4_epoch29.pth",
-            test_data_path=path,
-            columns=columns_to_use
-        )
+    path = 'C:/Repository/master/Processed_Dataset/RealData/*/*.parquet'
 
-        tester.load_model()
-        tester.repeat_test(n_times=5)
+    Tester(
+        model=model,
+        model_path="C:/Users/46270/PycharmProjects/pythonProject3/final_model/kfall_Acc.pth",
+        test_data_path=path,
+        window_size=200,
+        step_size=100,
+        columns=columns_to_use
+    ).run()

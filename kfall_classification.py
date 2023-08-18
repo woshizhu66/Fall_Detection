@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -369,13 +371,12 @@ class ClassificationModel:
             metrics['valid_loss'].append(valid_loss)
             metrics['valid_accuracy'].append(valid_accuracy)
             metrics['valid_f1'].append(valid_f1)
-            metrics['valid_TPR'] = valid_TPR  # Added metric
-            metrics['valid_FPR'] = valid_FPR  # Added metric
-            metrics['valid_FP'] = valid_FP  # Added metric
-            metrics['valid_FN'] = valid_FN  # Added metric
-            metrics['valid_TP'] = valid_TP  # Added metric
-            metrics['valid_TN'] = valid_TN  # Added metric
-
+            metrics['valid_TPR'].append(valid_TPR)  # Added metric
+            metrics['valid_FPR'].append(valid_FPR)  # Added metric
+            metrics['valid_FP'].append(valid_FP)  # Added metric
+            metrics['valid_FN'].append(valid_FN)  # Added metric
+            metrics['valid_TP'].append(valid_TP)  # Added metric
+            metrics['valid_TN'].append(valid_TN)  # Added metric
             # Early stopping
             early_stopping(epoch, valid_loss, model)
             if early_stopping.early_stop:
@@ -436,64 +437,64 @@ if __name__ == "__main__":
     '''
         Train model with different augmentations
     '''
-    root_dir = 'C:/Repository/master/Processed_Dataset/KFall'
-
-    augmentations = {
-        'timewarp': aug.Timewarp(sigma=0.2, knot=4, p=0.5),
-        'jitter': aug.Jitter(sigma=0.05, p=0.5),
-        'scale': aug.Scale(sigma=0.1, p=0.5),
-        'magnitudeWarp': aug.MagnitudeWarp(sigma=0.2, knot=4, p=0.5),
-        'rotation': aug.Rotation(angle_range=180, p=0.5),
-        'permutation': aug.Permutation(n_perm=4, min_seg_length=10, p=0.5),
-        'randSample': aug.RandSample(n_sample=150, p=0.5),
-    }
-
-    for name, augmentation in augmentations.items():
-        augmenter = aug.Augmenter([augmentation])
-        test_metrics = {
-            'window_size': [],
-            'test_accuracy': [],
-            'test_F1': [],
-            'test_TPR': [],
-            'test_FPR': [],
-            'FP': [],
-            'FN': [],
-            'TP': [],
-            'TN': []
-        }
-        for folder in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder)
-            # Create a dictionary to store the metrics during testing
-            window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
-                dataset_path=folder_path,
-                batch_size_train=8,
-                batch_size_valid=16,
-                batch_size_test=16,
-                input_size=9,
-                output_size=1,
-                flatten_method="mean",
-                num_channels=(64,) * 3 + (128,) * 2,
-                load_method='raw',
-                kernel_size=2,
-                dropout=0.5,
-                learning_rate=0.01,
-                num_epochs=30,
-                model_save_path=f"./new_cla_model_{name}",
-                augmenter=augmenter,
-                aug_name=name
-            ).run()
-
-            test_metrics['window_size'].append(window_size)
-            test_metrics['test_accuracy'].append(accuracy)
-            test_metrics['test_F1'].append(F1)
-            test_metrics['test_TPR'].append(TPR)
-            test_metrics['test_FPR'].append(FPR)
-            test_metrics['FP'].append(FP)
-            test_metrics['FN'].append(FN)
-            test_metrics['TP'].append(FP)
-            test_metrics['TN'].append(FP)
-        df_metrics = pd.DataFrame(test_metrics)
-        df_metrics.to_csv(f'./cla_test_metrics_{name}.csv', index=False)
+    root_dir = 'C:/Repository/master/Processed_Dataset/KFall/KFall_window_sec4'
+    #
+    # augmentations = {
+    #     'timewarp': aug.Timewarp(sigma=0.2, knot=4, p=0.5),
+    #     'jitter': aug.Jitter(sigma=0.05, p=0.5),
+    #     'scale': aug.Scale(sigma=0.1, p=0.5),
+    #     'magnitudeWarp': aug.MagnitudeWarp(sigma=0.2, knot=4, p=0.5),
+    #     'rotation': aug.Rotation(angle_range=180, p=0.5),
+    #     'permutation': aug.Permutation(n_perm=4, min_seg_length=10, p=0.5),
+    #     'randSample': aug.RandSample(n_sample=150, p=0.5),
+    # }
+    #
+    # for name, augmentation in augmentations.items():
+    #     augmenter = aug.Augmenter([augmentation])
+    #     test_metrics = {
+    #         'window_size': [],
+    #         'test_accuracy': [],
+    #         'test_F1': [],
+    #         'test_TPR': [],
+    #         'test_FPR': [],
+    #         'FP': [],
+    #         'FN': [],
+    #         'TP': [],
+    #         'TN': []
+    #     }
+    #
+    #
+    #     # Create a dictionary to store the metrics during testing
+    #     window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
+    #         dataset_path=root_dir,
+    #         batch_size_train=16,
+    #         batch_size_valid=32,
+    #         batch_size_test=32,
+    #         input_size=9,
+    #         output_size=1,
+    #         flatten_method="mean",
+    #         num_channels=(64,) * 5 + (128,) * 2,
+    #         load_method='raw',
+    #         kernel_size=2,
+    #         dropout=0.5,
+    #         learning_rate=0.01,
+    #         num_epochs=30,
+    #         model_save_path=f"./new_cla_model_{name}",
+    #         augmenter=augmenter,
+    #         aug_name=name
+    #     ).run()
+    #
+    #     test_metrics['window_size'].append(window_size)
+    #     test_metrics['test_accuracy'].append(accuracy)
+    #     test_metrics['test_F1'].append(F1)
+    #     test_metrics['test_TPR'].append(TPR)
+    #     test_metrics['test_FPR'].append(FPR)
+    #     test_metrics['FP'].append(FP)
+    #     test_metrics['FN'].append(FN)
+    #     test_metrics['TP'].append(FP)
+    #     test_metrics['TN'].append(FP)
+    #     df_metrics = pd.DataFrame(test_metrics)
+    #     df_metrics.to_csv(f'./cla_test_metrics_{name}.csv', index=False)
 
     '''
         Train model with different flatten methods
@@ -514,26 +515,26 @@ if __name__ == "__main__":
     #         last_number = int(re.findall(r'\d+', folder)[-1])
     #
     #         # Skip this iteration if the last number is greater or equal to 7
-    #         if last_number > 8:
+    #         if last_number > 7:
     #             continue
     #
     #         folder_path = os.path.join(root_dir, folder)
     #
     #         # Create a dictionary to store the metrics during testing
-    #         window_size, accuracy, F1, TPR, FPR = ClassificationModel(
+    #         window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
     #             dataset_path=folder_path,
-    #             batch_size_train=8,
-    #             batch_size_valid=16,
-    #             batch_size_test=16,
+    #             batch_size_train=16,
+    #             batch_size_valid=32,
+    #             batch_size_test=32,
     #             input_size=9,
     #             output_size=1,
     #             flatten_method=method,  # Changed to the current flatten method
-    #             num_channels=(64,) * 3 + (128,) * 2,
+    #             num_channels=(64,) * 5 + (128,) * 2,
     #             kernel_size=2,
     #             dropout=0.5,
-    #             load_method = 'mean',
+    #             load_method='raw',
     #             learning_rate=0.01,
-    #             num_epochs=30,
+    #             num_epochs=20,
     #             model_save_path=f"./new_cla_model_{method}",  # Changed to reflect the flatten method
     #             augmenter=None,
     #             aug_name=method
@@ -544,78 +545,78 @@ if __name__ == "__main__":
     #         test_metrics['test_F1'].append(F1)
     #         test_metrics['test_TPR'].append(TPR)
     #         test_metrics['test_FPR'].append(FPR)
-
-    # df_metrics = pd.DataFrame(test_metrics)
-    # df_metrics.to_csv(f'./cla_test_metrics_{method}.csv', index=False)  # Changed to reflect the flatten method
+    #
+    #     df_metrics = pd.DataFrame(test_metrics)
+    #     df_metrics.to_csv(f'./cla_test_metrics_{method}.csv', index=False)  # Changed to reflect the flatten method
 
     '''
         Train model with different feature combinations
     '''
-    # root_dir = 'C:/Repository/master/Processed_Dataset/KFall'
-    #
-    # load_methods = ['raw', 'acc', 'trajectory_acc', 'euler_acc', 'trajectory_acc_norm', 'trajectory_raw', 'acc_euler_gyr_norm']
-    #
-    # augmenter = None
-    # test_metrics = {
-    #     'load_method': [],
-    #     'window_size': [],
-    #     'test_accuracy': [],
-    #     'test_F1': [],
-    #     'test_TPR': [],
-    #     'test_FPR': [],
-    #     'FP': [],
-    #     'FN': [],
-    #     'TP': [],
-    #     'TN': []
-    # }
-    #
-    # for load in load_methods:
-    #
-    #     if load == 'raw':
-    #         input_size = 9
-    #     elif load == 'acc':
-    #         input_size = 3
-    #     elif load == 'trajectory_acc':
-    #         input_size = 6
-    #     elif load == 'euler_acc':
-    #         input_size = 6
-    #     elif load == 'trajectory_acc_norm':
-    #         input_size = 4
-    #     elif load == 'trajectory_raw':
-    #         input_size = 12
-    #     elif load == 'acc_euler_gyr_norm':
-    #         input_size = 7
-    #
-    #     folder_path = os.path.join(root_dir, 'KFall_window_sec4')
-    #     # Create a dictionary to store the metrics during testing
-    #     window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
-    #         dataset_path=folder_path,
-    #         batch_size_train=8,
-    #         batch_size_valid=16,
-    #         batch_size_test=16,
-    #         input_size=input_size,
-    #         output_size=1,
-    #         flatten_method="mean",
-    #         num_channels=(64,) * 3 + (128,) * 2,
-    #         kernel_size=2,
-    #         dropout=0.5,
-    #         load_method=load,
-    #         learning_rate=0.01,
-    #         num_epochs=30,
-    #         model_save_path=f"./new_cla_model_{load}",
-    #         augmenter=augmenter,
-    #         aug_name=load
-    #     ).run()
-    #     test_metrics['load_method'].append(load)
-    #     test_metrics['window_size'].append(window_size)
-    #     test_metrics['test_accuracy'].append(accuracy)
-    #     test_metrics['test_F1'].append(F1)
-    #     test_metrics['test_TPR'].append(TPR)
-    #     test_metrics['test_FPR'].append(FPR)
-    #     test_metrics['FP'].append(FP)
-    #     test_metrics['FN'].append(FN)
-    #     test_metrics['TP'].append(FP)
-    #     test_metrics['TN'].append(FP)
-    #     print(test_metrics)
-    # df_metrics = pd.DataFrame(test_metrics)
-    # df_metrics.to_csv(f'./cla_test_metrics_load_methods.csv', index=False)
+    root_dir = 'C:/Repository/master/Processed_Dataset/KFall'
+
+    load_methods = ['euler_acc']
+
+    augmenter = aug.Augmenter([aug.Timewarp(sigma=0.2, knot=4, p=0.5)])
+    test_metrics = {
+        'load_method': [],
+        'window_size': [],
+        'test_accuracy': [],
+        'test_F1': [],
+        'test_TPR': [],
+        'test_FPR': [],
+        'FP': [],
+        'FN': [],
+        'TP': [],
+        'TN': []
+    }
+
+    for load in load_methods:
+
+        if load == 'raw':
+            input_size = 9
+        elif load == 'acc':
+            input_size = 3
+        elif load == 'trajectory_acc':
+            input_size = 6
+        elif load == 'euler_acc':
+            input_size = 6
+        elif load == 'trajectory_acc_norm':
+            input_size = 4
+        elif load == 'trajectory_raw':
+            input_size = 12
+        elif load == 'acc_euler_gyr_norm':
+            input_size = 7
+
+        folder_path = os.path.join(root_dir, 'KFall_window_sec4')
+        # Create a dictionary to store the metrics during testing
+        window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
+            dataset_path=folder_path,
+            batch_size_train=16,
+            batch_size_valid=32,
+            batch_size_test=32,
+            input_size=input_size,
+            output_size=1,
+            flatten_method="mean",
+            num_channels=(64,) * 5 + (128,) * 2,
+            kernel_size=2,
+            dropout=0.5,
+            load_method=load,
+            learning_rate=0.01,
+            num_epochs=30,
+            model_save_path=f"./new_cla_model_{load}",
+            augmenter=augmenter,
+            aug_name=load
+        ).run()
+        test_metrics['load_method'].append(load)
+        test_metrics['window_size'].append(window_size)
+        test_metrics['test_accuracy'].append(accuracy)
+        test_metrics['test_F1'].append(F1)
+        test_metrics['test_TPR'].append(TPR)
+        test_metrics['test_FPR'].append(FPR)
+        test_metrics['FP'].append(FP)
+        test_metrics['FN'].append(FN)
+        test_metrics['TP'].append(FP)
+        test_metrics['TN'].append(FP)
+        print(test_metrics)
+    df_metrics = pd.DataFrame(test_metrics)
+    df_metrics.to_csv(f'./cla_test_metrics_load_methods.csv', index=False)

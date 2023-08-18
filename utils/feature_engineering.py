@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 
@@ -115,3 +117,22 @@ def cal_gyr_norm(data):
         gyr_norm = np.linalg.norm(gyr_data, axis=1)
         norm.append(gyr_norm)
     return np.array(norm)
+
+
+# Calculate roll and pitch using the accelerometer data
+def calculate_roll_pitch(acc_x, acc_y, acc_z):
+    roll = np.arctan2(acc_y, np.sqrt(acc_x ** 2 + acc_z ** 2))
+    pitch = np.arctan2(-acc_x, np.sqrt(acc_y ** 2 + acc_z ** 2))
+    return roll, pitch
+
+
+
+# Calculate yaw using the magnetometer data and roll & pitch
+def calculate_yaw(mag_x, mag_y, mag_z, roll, pitch):
+    # Correct the magnetic readings for tilt (using pitch and roll)
+    mx = mag_x * np.cos(pitch) + mag_z * np.sin(pitch)
+    my = mag_x * np.sin(roll) * np.sin(pitch) + mag_y * np.cos(roll) - mag_z * np.sin(roll) * np.cos(pitch)
+    mz = -mag_x * np.cos(roll) * np.sin(pitch) + mag_y * np.sin(roll) + mag_z * np.cos(roll) * np.cos(pitch)
+
+    yaw = np.arctan2(my, mx)
+    return yaw
