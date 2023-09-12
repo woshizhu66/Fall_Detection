@@ -118,7 +118,6 @@ class ClassificationModel2:
             train, valid, test = load_dataset_with_waist_acc(self.dataset_path)
 
 
-
         train_set = ResampleArrayDataset(train, augmenter=self.augmenter)
         train_loader = DataLoader(train_set, batch_size=self.batch_size_train, shuffle=True)
         valid_set = BasicArrayDataset(valid)
@@ -246,11 +245,11 @@ class ClassificationModel2:
         # Convert metrics dictionary to DataFrame and save as CSV
         df_metrics = pd.DataFrame(metrics)
 
-        csv_file_name = f'./FallAllD_train_records/{window_size}_training_metrics_aug_{self.aug_name}.csv'
+        csv_file_name = f'./FallAllD_test_train_records/{window_size}_training_metrics_{self.aug_name}.csv'
 
-        if not os.path.exists('./FallAllD_train_records'):
+        if not os.path.exists('./FallAllD_test_train_records'):
             # If the directory doesn't exist, create it
-            os.makedirs('./FallAllD_train_records')
+            os.makedirs('./FallAllD_test_train_records')
 
         df_metrics.to_csv(csv_file_name, index=False)
 
@@ -341,9 +340,8 @@ if __name__ == "__main__":
     #     df_metrics = pd.DataFrame(test_metrics)
     #     df_metrics.to_csv(f'./fallAllD_cla_test_metrics_{method}.csv', index=False)  # Changed to reflect the flatten method
     #
-    root_dir = 'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec6'
-
-    load_methods = ['waist_acc']
+    root_dir = 'C:/Repository/master/Processed_Dataset/FallAllD_Test/FallAllD_window_sec4'
+    load_methods = ['waist_eul_acc']
     augmenter = aug.Augmenter([aug.Timewarp(sigma=0.2, knot=4, p=0.5)])
 
     test_metrics = {
@@ -379,7 +377,7 @@ if __name__ == "__main__":
             batch_size_train=16,
             batch_size_valid=32,
             batch_size_test=32,
-            input_size=3,
+            input_size=6,
             output_size=1,
             flatten_method="mean",
             num_channels=(64,) * 5 + (128,) * 2,
@@ -388,7 +386,7 @@ if __name__ == "__main__":
             load_method=load,
             learning_rate=0.01,
             num_epochs=20,
-            model_save_path=f"./fallAllD_cla_model_new_aug_{load}",
+            model_save_path=f"./fallAllD_cla_model_new_euler_acc_{load}",
             augmenter=augmenter,
             aug_name=load
         ).run()
@@ -404,4 +402,4 @@ if __name__ == "__main__":
         test_metrics['TN'].append(FP)
         print(test_metrics)
     df_metrics = pd.DataFrame(test_metrics)
-    df_metrics.to_csv(f'./fallAllD_cla_test_metrics_load_methods.csv', index=False)
+    # df_metrics.to_csv(f'./fallAllD_cla_test_metrics_load_methods.csv', index=False)

@@ -107,7 +107,8 @@ if __name__ == "__main__":
 
     Tester(
         model=model,
-        model_path="C:/Users/46270/PycharmProjects/pythonProject3/final_model/kfall_Acc.pth",
+        model_path=
+        "C:/Users/46270/PycharmProjects/pythonProject3/fallAllD_cla_model_new_aug_waist_acc/model_size4_epoch12.pth",
         test_data_path=path,
         window_size=200,
         step_size=100,

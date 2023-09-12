@@ -100,7 +100,7 @@ class Tester:
 
 if __name__ == "__main__":
     model = TCN(6, 1, (64,) * 5 + (128,) * 2, 2, 0.5, "mean")
-    columns_to_use = ['waist_Acc_x', 'waist_Acc_y', 'waist_Acc_z','waist_euler_x', 'waist_euler_y', 'waist_euler_z']
+    columns_to_use = ['waist_Acc_x', 'waist_Acc_y', 'waist_Acc_z', 'waist_euler_x', 'waist_euler_y', 'waist_euler_z']
 
     male_path = "C:/Repository/master/Processed_Dataset/Erciyes/man/*/*.parquet"
     female_path = "C:/Repository/master/Processed_Dataset/Erciyes/woman/*/*.parquet"
@@ -112,7 +112,8 @@ if __name__ == "__main__":
         print(f"Testing for {name}...")
         tester = Tester(
             model=model,
-            model_path="C:/Users/46270/PycharmProjects/pythonProject3/final_model/model_size4_epoch25.pth",
+            model_path=
+            "C:/Users/46270/PycharmProjects/pythonProject3/fallAllD_cla_model_new_euler_acc_waist_eul_acc/model_size4_epoch2.pth",
             test_data_path=path,
             columns=columns_to_use,
             window_size=200,

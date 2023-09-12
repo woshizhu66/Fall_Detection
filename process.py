@@ -561,8 +561,8 @@ class FallAllD(Process):
 
         # Assumes both dataframes have the same 'msec' values after resampling
         merged_df = pd.merge(df1_resampled, df2_resampled, on='msec')
-        if crop_time is not None:
-            merged_df = merged_df[merged_df['msec'] <= 7000]
+        if crop_time is None:
+            merged_df = merged_df[(merged_df['msec'] <= 12000) & (merged_df['msec'] >= 3000)]
         return merged_df
 
     def run(self):
@@ -603,15 +603,15 @@ class FallAllD(Process):
                         for index, value in subset_df.iterrows():
                             if act in last_35_activities:
                                 # Limit data to 8000ms for specific ActivityIDs
-                                temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
-                                                                   8000)
-                                label = 'fall'
-                            elif act in [102, 104, 108, 110, 116, 118, 120, 122, 124, 126, 128]:
-                                # Limit data to 7000ms for specific ActivityIDs
-                                temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
-                                                                   8000)
-                            else:
                                 temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df)
+                                label = 'fall'
+                            # elif act in [102, 104, 108, 110, 116, 118, 120, 122, 124, 126, 128]:
+                            #     # Limit data to 7000ms for specific ActivityIDs
+                            #     temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
+                            #                                        8000)
+                            else:
+                                temp_df = self.process_device_data(value['Device'],
+                                                                   msec1, msec2, index, subset_df, 'no_crop')
 
                             dataframes_to_merge.append(temp_df)
 
@@ -778,13 +778,13 @@ if __name__ == '__main__':
     #         signal_freq=50, window_size_sec=sec
     #     ).run()
 
-    # for sec in range(4, 9):
-    #     FallAllD(
-    #         raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
-    #         name='FallAllD',
-    #         destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD/FallAllD_window_sec{sec}',
-    #         signal_freq=50, window_size_sec=sec
-    #     ).run()
+
+    FallAllD(
+        raw_folder='C:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
+        name='FallAllD',
+        destination_folder=f'C:/Repository/master/Processed_Dataset/FallAllD_Test/FallAllD_window_sec{8}',
+        signal_freq=50, window_size_sec=8
+    ).run()
 
     # Erciyes(
     #     raw_folder=
@@ -794,10 +794,10 @@ if __name__ == '__main__':
     #     signal_freq=50
     # ).run()
 
-    RealData(
-        raw_folder=
-        'C:/Repository/master/Raw_Dataset/ohsu-ms-fall-data/ms_ohsu_raw_imu_data_04152018',
-        name='RealData',
-        destination_folder=f'C:/Repository/master/Processed_Dataset/RealData',
-        signal_freq=50
-    ).run()
+    # RealData(
+    #     raw_folder=
+    #     'C:/Repository/master/Raw_Dataset/ohsu-ms-fall-data/ms_ohsu_raw_imu_data_04152018',
+    #     name='RealData',
+    #     destination_folder=f'C:/Repository/master/Processed_Dataset/RealData',
+    #     signal_freq=50
+    # ).run()
