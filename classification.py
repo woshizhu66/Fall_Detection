@@ -309,12 +309,9 @@ class ClassificationModel:
         test_set = BasicArrayDataset(test)
         test_loader = DataLoader(test_set, batch_size=self.batch_size_test, shuffle=False)
 
-        # 计算训练数据的均值和标准差
+     
         mean, std = compute_mean_std(train_loader)
 
-        # 应用标准化（如果您的模型需要这一步）
-        # 注意：这假设您的模型有一个名为 'input_norm' 的 BatchNorm 层
-        # 用于在模型的前向传播中对输入数据进行标准化
         if hasattr(self.model, 'input_norm'):
             self.model.input_norm.running_mean = mean
             self.model.input_norm.running_var = std * std
