@@ -103,7 +103,7 @@ if __name__ == "__main__":
     model = TCN(3, 1, (64,) * 5 + (128,) * 2, 2, 0.5, "mean")
     columns_to_use = ['acc_x', 'acc_y', 'acc_z']
 
-    path = 'C:/Repository/master/Processed_Dataset/RealData/*/*.parquet'
+    path = 'D:/Repository/master/Processed_Dataset/RealData/*/*.parquet'
 
     Tester(
         model=model,

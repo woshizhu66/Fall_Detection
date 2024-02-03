@@ -1,14 +1,16 @@
 import torch
-import torch.nn as nn
-from torch.nn.utils import weight_norm
+from torch import nn
+import torch.nn.functional as F
 
-class TCN(nn.Module):
+
+class MultiHeadTCN(nn.Module):
     def __init__(
             self,
             input_size,
             output_size,
             num_channels,
-            kernel_size,
+            kernel_size1,
+            kernel_size2,
             dropout,
             flatten_method="last"):
         """
@@ -23,10 +25,10 @@ class TCN(nn.Module):
             flatten_method (str, optional): Method to flatten the TCN outputs. "last", "mean", or "max".
                 Defaults to "last".
         """
-        super(TCN, self).__init__()
+        super(MultiHeadTCN, self).__init__()
 
         # Initialize the TemporalConvNet
-        self.tcn = TemporalConvNet(input_size, num_channels, kernel_size, dropout=dropout)
+        self.m_tcn = MultiHeadTemporalConvNet(input_size, num_channels, kernel_size1, kernel_size2, dropout=dropout)
 
         # Fully connected layer for final output
         self.fc = nn.Linear(num_channels[-1], output_size)
@@ -46,10 +48,9 @@ class TCN(nn.Module):
             output (Tensor): Output tensor after passing through the TCN layers and the final fully connected layer.
         """
         # Transpose the input tensor to match ths shape (batch_size, num_channels, sequence_length)
-        if len(x.shape) == 2:
-            x = x.unsqueeze(-1)
         x = x.transpose(1, 2)
-        features = self.tcn(x)
+        features = self.m_tcn(x)
+
         # Apply the chosen flatten method
         if self.flatten_method == "last":
             features = features[:, :, -1]
@@ -58,6 +59,7 @@ class TCN(nn.Module):
         elif self.flatten_method == "max":
             features = features.max(dim=-1)[0]
 
+        # output.shape: [batch_size, num_classes]
         output = self.fc(features)
         return output
 
@@ -71,36 +73,57 @@ class Chomp1d(nn.Module):
         return x[:, :, :-self.chomp_size].contiguous()
 
 
-class TemporalBlock(nn.Module):
-    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
-        super(TemporalBlock, self).__init__()
-        self.conv1 = nn.Conv1d(n_inputs, n_outputs, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation)
-        self.chomp1 = Chomp1d(padding)
-        self.bn1 = nn.BatchNorm1d(n_outputs)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+class MultiHeadTemporalBlock(nn.Module):
+    def __init__(self, n_inputs, n_outputs, kernel_size1, kernel_size2, stride, dilation, dropout=0.2):
+        super(MultiHeadTemporalBlock, self).__init__()
+        padding1 = (kernel_size1 - 1) * dilation
+        padding2 = (kernel_size2 - 1) * dilation
+        half_n_outputs = n_outputs // 2
+        # First convolutional block
+        self.block1 = nn.Sequential(
+            nn.Conv1d(n_inputs, half_n_outputs, kernel_size1, stride=stride, padding=padding1, dilation=dilation),
+            Chomp1d(padding1),
+            nn.BatchNorm1d(half_n_outputs),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(half_n_outputs, half_n_outputs, kernel_size1, stride=stride, padding=padding1, dilation=dilation),
+            Chomp1d(padding1),
+            nn.BatchNorm1d(half_n_outputs),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
 
-        self.conv2 = nn.Conv1d(n_outputs, n_outputs, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation)
-        self.chomp2 = Chomp1d(padding)
-        self.bn2 = nn.BatchNorm1d(n_outputs)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(dropout)
+        # Second convolutional block
+        self.block2 = nn.Sequential(
+            nn.Conv1d(n_inputs, half_n_outputs, kernel_size2, stride=stride, padding=padding2, dilation=dilation),
+            Chomp1d(padding2),
+            nn.BatchNorm1d(half_n_outputs),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(half_n_outputs, half_n_outputs, kernel_size2, stride=stride, padding=padding2, dilation=dilation),
+            Chomp1d(padding2),
+            nn.BatchNorm1d(half_n_outputs),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
-                                 self.conv2, self.chomp2, self.relu2, self.dropout2)
+        # Residual connection
         self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        out = self.net(x)
+        # Process the input through both blocks in parallel
+        out1 = self.block1(x)
+        out2 = self.block2(x)
+        combined_out = torch.cat([out1, out2], dim=1)
+
         res = x if self.downsample is None else self.downsample(x)
-        return self.relu(out + res)
+
+        return self.relu(combined_out + res)
 
 
-class TemporalConvNet(nn.Module):
-    def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
+class MultiHeadTemporalConvNet(nn.Module):
+    def __init__(self, num_inputs, num_channels, kernel_size1, kernel_size2, dropout):
         """
         Initialize the TemporalConvNet.
 
@@ -110,15 +133,15 @@ class TemporalConvNet(nn.Module):
             kernel_size (int, optional)
             dropout (float, optional)
         """
-        super(TemporalConvNet, self).__init__()
+        super(MultiHeadTemporalConvNet, self).__init__()
         layers = []
         num_levels = len(num_channels)
         for i in range(num_levels):
             dilation_size = 2 ** i
             in_channels = num_inputs if i == 0 else num_channels[i - 1]
             out_channels = num_channels[i]
-            layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
-                                     padding=(kernel_size - 1) * dilation_size, dropout=dropout)]
+            layers += [MultiHeadTemporalBlock(in_channels, out_channels, kernel_size1, kernel_size2, stride=1,
+                                              dilation=dilation_size, dropout=dropout)]
 
         self.network = nn.Sequential(*layers)
 

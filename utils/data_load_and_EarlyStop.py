@@ -194,12 +194,12 @@ class ResampleArrayDatasetSeg(Dataset):
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
-    def __init__(self, save_path, window_size, patience=10, verbose=False, delta=0):
+    def __init__(self, save_path, window_size, patience=2, verbose=False, delta=0):
         """
         Args:
             save_path :
             patience (int): How long to wait after last time validation loss improved.
-                            Default: 10
+                            Default: 5
             verbose (bool): If True, prints a message for each validation loss improvement.
                             Default: False
             delta (float): Minimum change in the monitored quantity to qualify as an improvement.
@@ -218,10 +218,11 @@ class EarlyStopping:
     def __call__(self, epoch, val_loss, model):
 
         score = -val_loss
-
+        number = 0
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(epoch, val_loss, model)
+            self.save_checkpoint(epoch+1, val_loss, model)
+            number = epoch
         elif score < self.best_score + self.delta:
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -229,8 +230,11 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(epoch, val_loss, model)
+            self.save_checkpoint(epoch+1, val_loss, model)
             self.counter = 0
+            number = epoch
+
+        return number
 
     def save_checkpoint(self, epoch, val_loss, model):
         """Saves model when validation loss decrease."""

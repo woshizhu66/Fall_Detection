@@ -136,7 +136,7 @@ class Process:
         self.raw_folder = raw_folder
         self.destination_folder = destination_folder
         # pattern for output npy file name
-        self.output_name_pattern = f'{destination_folder}/{name}_{{label}}/{{index}}.npy'
+        self.output_name_pattern = f'{destination_folder}/{{type}}/{name}_{{label}}/{{index}}.npy'
 
         # convert sec to num rows
         self.window_size_row = int(window_size_sec * signal_freq)
@@ -166,7 +166,7 @@ class Process:
 
         return df
 
-    def write_npy_sequences(self, data: list, label: str):
+    def write_npy_sequences(self, data: list, label: str, type: str):
         """
         Write all sequences into npy files
 
@@ -179,7 +179,7 @@ class Process:
         index_pattern = f'%0{num_digits}d'
 
         for i, seq_windows in enumerate(data):
-            output_path = self.output_name_pattern.format(label=label, index=index_pattern % i)
+            output_path = self.output_name_pattern.format(type=type, label=label, index=index_pattern % i)
             os.makedirs(os.path.split(output_path)[0], exist_ok=True)
             print(f'writing {seq_windows.shape} to {output_path}')
             np.save(output_path, seq_windows)
@@ -301,7 +301,7 @@ class KFall(Process):
         windows = shifting_window(
             data_arr,
             window_size=self.window_size_row, max_num_windows=self.max_window_per_fall,
-            min_step_size=self.min_fall_window_step_size,
+            min_step_size=self.window_size_row // 2,
             start_idx=fall_onset_idx, end_idx=fall_impact_idx + self.expand_after_impact
         )
         return windows
@@ -320,7 +320,7 @@ class KFall(Process):
             timestamp_col='msec')
         data_arr = data_df.to_numpy()
         if len(data_arr) >= self.window_size_row:
-            windows = sliding_window(data_arr, window_size=self.window_size_row, step_size=self.window_size_row // 2)
+            windows = sliding_window(data_arr, window_size=self.window_size_row//2, step_size=self.window_size_row)
         else:
             window = np.pad(data_arr, [[self.window_size_row - len(data_arr), 0], [0, 0]])
             windows = np.array([window])
@@ -330,7 +330,7 @@ class KFall(Process):
 
         all_fall_sequences = []
         all_adl_sequences = defaultdict(list)
-
+        type = self.raw_folder.split('KFall_')[1]
         # go through all subjects
         for subject_id in tqdm(sorted(os.listdir(self.raw_data_folder))):
             label_df = self._read_label(f'{self.raw_label_folder}/{subject_id}_label.xlsx')
@@ -356,10 +356,10 @@ class KFall(Process):
                     all_adl_sequences[f'task{task_id}'].append(adl_windows)
 
         # write fall data
-        self.write_npy_sequences(all_fall_sequences, label='fall')
+        self.write_npy_sequences(all_fall_sequences, label='fall', type=type)
         # write adl data
         for task_id, task_data in all_adl_sequences.items():
-            self.write_npy_sequences(task_data, label=task_id)
+            self.write_npy_sequences(task_data, label=task_id, type=type)
 
 
 
@@ -467,44 +467,53 @@ class FallAllD(Process):
             DataFrame: A DataFrame containing the processed device data.
             [msec,Neck[9], Wrist[9], Waist[9]]
         """
+
+        acc_conversion_coeff = 8 / 32767 * 9.80665
+        gyr_conversion_coeff = 2000 / 32767 * 3.14159265359 / 180
+        mag_conversion_coeff = 4 / 32767
+
         if device == 'Neck':
-            neck_Acc_x = -fall_all_d['Acc'][index][:, 0]
-            neck_Acc_y = fall_all_d['Acc'][index][:, 1]
-            neck_Acc_z = fall_all_d['Acc'][index][:, 2]
+            # Apply conversion to accelerometer data
+            neck_Acc = fall_all_d['Acc'][index] * gyr_conversion_coeff
+            neck_Acc_x, neck_Acc_y, neck_Acc_z = -neck_Acc[:, 0], neck_Acc[:, 1], neck_Acc[:, 2]
 
-            neck_Gyr_x = -fall_all_d['Gyr'][index][:, 0]
-            neck_Gyr_y = fall_all_d['Gyr'][index][:, 1]
-            neck_Gyr_z = fall_all_d['Gyr'][index][:, 2]
+            # Apply conversion to gyroscope data
+            neck_Gyr = fall_all_d['Gyr'][index] * gyr_conversion_coeff
+            neck_Gyr_x, neck_Gyr_y, neck_Gyr_z = -neck_Gyr[:, 0], neck_Gyr[:, 1], neck_Gyr[:, 2]
 
+            # Apply conversion to magnetometer data
+            neck_Mag = fall_all_d['Mag'][index] * mag_conversion_coeff
+            neck_Mag_x, neck_Mag_y, neck_Mag_z = -neck_Mag[:, 0], neck_Mag[:, 1], neck_Mag[:, 2]
+
+            # Create DataFrame with converted data
             df1 = pd.DataFrame({
                 'msec': msec1,
-                'neck_Acc_x': neck_Acc_y,
-                'neck_Acc_y': neck_Acc_x,
+                'neck_Acc_x': neck_Acc_x,
+                'neck_Acc_y': neck_Acc_y,
                 'neck_Acc_z': neck_Acc_z,
-                'neck_Gyr_x': neck_Gyr_y,
-                'neck_Gyr_y': neck_Gyr_x,
+                'neck_Gyr_x': neck_Gyr_x,
+                'neck_Gyr_y': neck_Gyr_y,
                 'neck_Gyr_z': neck_Gyr_z,
             })
 
-            neck_Mag_x = -fall_all_d['Mag'][index][:, 0]
-            neck_Mag_y = fall_all_d['Mag'][index][:, 1]
-            neck_Mag_z = fall_all_d['Mag'][index][:, 2]
-
             df2 = pd.DataFrame({
                 'msec': msec2,
-                'neck_Mag_x': neck_Mag_y,
-                'neck_Mag_y': neck_Mag_x,
+                'neck_Mag_x': neck_Mag_x,
+                'neck_Mag_y': neck_Mag_y,
                 'neck_Mag_z': neck_Mag_z,
             })
 
         elif device == 'Waist':
-            waist_Acc_x = -fall_all_d['Acc'][index][:, 0]
-            waist_Acc_y = fall_all_d['Acc'][index][:, 1]
-            waist_Acc_z = fall_all_d['Acc'][index][:, 2]
 
-            waist_Gyr_x = -fall_all_d['Gyr'][index][:, 0]
-            waist_Gyr_y = fall_all_d['Gyr'][index][:, 1]
-            waist_Gyr_z = fall_all_d['Gyr'][index][:, 2]
+            waist_Acc = fall_all_d['Acc'][index] * acc_conversion_coeff
+            waist_Acc_x = -waist_Acc[:, 0]
+            waist_Acc_y = waist_Acc[:, 1]
+            waist_Acc_z = waist_Acc[:, 2]
+
+            waist_Gyr = fall_all_d['Gyr'][index] * gyr_conversion_coeff
+            waist_Gyr_x = -waist_Gyr[:, 0]
+            waist_Gyr_y = waist_Gyr[:, 1]
+            waist_Gyr_z = waist_Gyr[:, 2]
 
             df1 = pd.DataFrame({
                 'msec': msec1,
@@ -516,9 +525,10 @@ class FallAllD(Process):
                 'waist_Gyr_z': waist_Gyr_z,
             })
 
-            waist_Mag_x = -fall_all_d['Mag'][index][:, 0]
-            waist_Mag_y = fall_all_d['Mag'][index][:, 1]
-            waist_Mag_z = fall_all_d['Mag'][index][:, 2]
+            waist_Mag = fall_all_d['Mag'][index] * mag_conversion_coeff
+            waist_Mag_x = -waist_Mag[:, 0]
+            waist_Mag_y = waist_Mag[:, 1]
+            waist_Mag_z = waist_Mag[:, 2]
 
             df2 = pd.DataFrame({
                 'msec': msec2,
@@ -528,13 +538,15 @@ class FallAllD(Process):
             })
 
         elif device == 'Wrist':
-            wrist_Acc_x = -fall_all_d['Acc'][index][:, 0]
-            wrist_Acc_y = fall_all_d['Acc'][index][:, 1]
-            wrist_Acc_z = fall_all_d['Acc'][index][:, 2]
+            wrist_Acc = fall_all_d['Acc'][index] * acc_conversion_coeff
+            wrist_Acc_x = -wrist_Acc[:, 0]
+            wrist_Acc_y = wrist_Acc[:, 1]
+            wrist_Acc_z = wrist_Acc[:, 2]
 
-            wrist_Gyr_x = -fall_all_d['Gyr'][index][:, 0]
-            wrist_Gyr_y = fall_all_d['Gyr'][index][:, 1]
-            wrist_Gyr_z = fall_all_d['Gyr'][index][:, 2]
+            wrist_Gyr = fall_all_d['Gyr'][index] * gyr_conversion_coeff
+            wrist_Gyr_x = -wrist_Gyr[:, 0]
+            wrist_Gyr_y = wrist_Gyr[:, 1]
+            wrist_Gyr_z = wrist_Gyr[:, 2]
 
             df1 = pd.DataFrame({
                 'msec': msec1,
@@ -546,9 +558,10 @@ class FallAllD(Process):
                 'wrist_Gyr_z': wrist_Gyr_z,
             })
 
-            wrist_Mag_x = -fall_all_d['Mag'][index][:, 0]
-            wrist_Mag_y = fall_all_d['Mag'][index][:, 1]
-            wrist_Mag_z = fall_all_d['Mag'][index][:, 2]
+            wrist_Mag = fall_all_d['Mag'][index] * mag_conversion_coeff
+            wrist_Mag_x = -wrist_Mag[:, 0]
+            wrist_Mag_y = wrist_Mag[:, 1]
+            wrist_Mag_z = wrist_Mag[:, 2]
 
             df2 = pd.DataFrame({
                 'msec': msec2,
@@ -566,9 +579,26 @@ class FallAllD(Process):
             merged_df = merged_df[(merged_df['msec'] <= 12000) & (merged_df['msec'] >= 7000)]
         return merged_df
 
-    def run(self):
-        FallAllD = self._read_data(self.raw_folder)
+    def split_dataset_by_subject(self, FallAllD):
+        # Define Subject IDs for each set
+        train_ids = [1, 3, 12]
+        valid_ids = [4, 5]
+        test_ids = [2, 9, 10, 11, 13, 14, 15]
 
+        # Split the DataFrame
+        train_df = FallAllD[FallAllD['SubjectID'].isin(train_ids)]
+        valid_df = FallAllD[FallAllD['SubjectID'].isin(valid_ids)]
+        test_df = FallAllD[FallAllD['SubjectID'].isin(test_ids)]
+
+        return train_df, valid_df, test_df
+
+    def run(self):
+        if os.path.exists("./FallAllD.csv"):
+            FallAllD = pd.read_csv("./FallAllD.csv")
+        else:
+            FallAllD = self._read_data(self.raw_folder)
+        train, valid, test = self.split_dataset_by_subject(FallAllD)
+        types = ['train', 'valid', 'test']
         # Calculate values for msec1 and msec2
         msec1 = np.arange(0, 20, 1 / 238) * 1000
         msec2 = np.arange(0, 20, 1 / 80) * 1000
@@ -585,58 +615,65 @@ class FallAllD(Process):
         # Get the last 35 unique ActivityIDs
         last_35_activities = sorted(unique_activities)[-35:]
 
-        # Loop through unique subjects, activities, and trials
-        for sub in unique_subjects:
-            for act in unique_activities:
-                for tri in unique_trials:
-                    # Get the subset of data based on specific conditions
-                    subset_df = FallAllD.loc[(FallAllD['SubjectID'] == sub) &
-                                             (FallAllD['ActivityID'] == act) &
-                                             (FallAllD['TrialNo'] == tri)]
+        for type in types:
+            if type == 'train':
+                df = train.copy()
+            elif type == 'valid':
+                df = valid.copy()
+            elif type == 'test':
+                df = test.copy()
+            # Loop through unique subjects, activities, and trials
+            for sub in unique_subjects:
+                for act in unique_activities:
+                    for tri in unique_trials:
+                        # Get the subset of data based on specific conditions
+                        subset_df = df.loc[(df['SubjectID'] == sub) &
+                                                 (df['ActivityID'] == act) &
+                                                 (df['TrialNo'] == tri)]
 
-                    label = 'non_fall'
-                    # Check if subset_df is not empty and 'Device' has 3 unique values
-                    if not subset_df.empty and subset_df['Device'].nunique() == 3:
-                        merged = None
-                        dataframes_to_merge = []
+                        label = 'non_fall'
+                        # Check if subset_df is not empty and 'Device' has 3 unique values
+                        if not subset_df.empty and subset_df['Device'].nunique() == 3:
+                            merged = None
+                            dataframes_to_merge = []
 
-                        # Loop through the subset_df and process each device data
-                        for index, value in subset_df.iterrows():
-                            if act in last_35_activities:
-                                # Limit data to 8000ms for specific ActivityIDs
-                                temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df)
-                                label = 'fall'
-                            # elif act in [102, 104, 108, 110, 116, 118, 120, 122, 124, 126, 128]:
-                            #     # Limit data to 7000ms for specific ActivityIDs
-                            #     temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
-                            #                                        8000)
-                            else:
-                                temp_df = self.process_device_data(value['Device'],
-                                                                   msec1, msec2, index, subset_df, 'no_crop')
-                            dataframes_to_merge.append(temp_df)
+                            # Loop through the subset_df and process each device data
+                            for index, value in subset_df.iterrows():
+                                if act in last_35_activities:
+                                    # Limit data to 8000ms for specific ActivityIDs
+                                    temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df)
+                                    label = 'fall'
+                                # elif act in [102, 104, 108, 110, 116, 118, 120, 122, 124, 126, 128]:
+                                #     # Limit data to 7000ms for specific ActivityIDs
+                                #     temp_df = self.process_device_data(value['Device'], msec1, msec2, index, subset_df,
+                                #                                        8000)
+                                else:
+                                    temp_df = self.process_device_data(value['Device'],
+                                                                       msec1, msec2, index, subset_df, 'no_crop')
+                                dataframes_to_merge.append(temp_df)
 
-                        # Merge the processed dataframes
-                        if dataframes_to_merge:
-                            merged = pd.merge(dataframes_to_merge[0], dataframes_to_merge[1], on='msec')
-                            merged = pd.merge(merged, dataframes_to_merge[2], on='msec')
-                            print(merged)
-                            merged_arr = merged.to_numpy()
+                            # Merge the processed dataframes
+                            if dataframes_to_merge:
+                                merged = pd.merge(dataframes_to_merge[0], dataframes_to_merge[1], on='msec')
+                                merged = pd.merge(merged, dataframes_to_merge[2], on='msec')
+                                print(merged)
+                                merged_arr = merged.to_numpy()
 
-                            # Append sequences based on the label
-                            if label == 'fall':
-                                windows = sliding_window(merged_arr, window_size=self.window_size_row,
-                                                         step_size=int(0.5 * self.signal_freq * 1000))
-                                all_fall_sequences.append(windows)
-                            elif label == 'non_fall':
-                                windows = sliding_window(merged_arr, window_size=self.window_size_row,
-                                                         step_size=self.window_size_row // 2)
-                                all_adl_sequences[f'act{act}'].append(windows)
+                                # Append sequences based on the label
+                                if label == 'fall':
+                                    windows = sliding_window(merged_arr, window_size=self.window_size_row,
+                                                             step_size=int(0.5 * self.signal_freq * 1000))
+                                    all_fall_sequences.append(windows)
+                                elif label == 'non_fall':
+                                    windows = sliding_window(merged_arr, window_size=self.window_size_row,
+                                                             step_size=self.window_size_row)
+                                    all_adl_sequences[f'act{act}'].append(windows)
 
-        # write fall data
-        self.write_npy_sequences(all_fall_sequences, label='fall')
-        # write adl data
-        for act_id, act_data in all_adl_sequences.items():
-            self.write_npy_sequences(act_data, label=act_id)
+            # write fall data
+            self.write_npy_sequences(all_fall_sequences, label='fall', type=type)
+            # write adl data
+            for act_id, act_data in all_adl_sequences.items():
+                self.write_npy_sequences(act_data, label=act_id, type=type)
 
 
 class Erciyes(Process):
@@ -784,36 +821,22 @@ class RealData(Process):
 
 
 if __name__ == '__main__':
-    types = ['train', 'test']
-    for type in types:
+    split_name = ['train', 'test', 'valid']
+    for name in split_name:
         KFall(
             max_window_per_fall=3,
-            raw_folder=f'D:/Repository/master/Raw_Dataset/KFall_{type}',
+            raw_folder=f'D:/Repository/master/Raw_Dataset/KFall_{name}',
             name='KFall',
-            destination_folder=f'D:/Repository/master/Processed_Dataset/KFall/KFall_window_sec4_{type}_no_overlap_adl',
+            destination_folder=f'D:/Repository/master/Processed_Dataset/KFall/train_valid_test_50percent',
             signal_freq=50, window_size_sec=4
         ).run()
 
-    #
+
     # FallAllD(
     #     raw_folder='D:/Repository/master/Raw_Dataset/FallAllD/FallAllD__zip/FallAllD',
     #     name='FallAllD',
-    #     destination_folder=f'D:/Repository/master/Processed_Dataset/FallAllD_directiontest/FallAllD_window_sec4',
+    #     destination_folder=f'D:/Repository/master/Processed_Dataset/FallAllD/train_valid_test2',
     #     signal_freq=50, window_size_sec=4
     # ).run()
 
-    # Erciyes(
-    #     raw_folder=
-    #     'D:/Repository/master/Raw_Dataset/Erciyes/simulated+falls+and+daily+living+activities+data+set/Tests',
-    #     name='Erciyes',
-    #     destination_folder=f'D:/Repository/master/Processed_Dataset/Erciyes__direction',
-    #     signal_freq=50
-    # ).run()
 
-    # RealData(
-    #     raw_folder=
-    #     'C:/Repository/master/Raw_Dataset/ohsu-ms-fall-data/ms_ohsu_raw_imu_data_04152018',
-    #     name='RealData',
-    #     destination_folder=f'C:/Repository/master/Processed_Dataset/RealData',
-    #     signal_freq=50
-    # ).run()
