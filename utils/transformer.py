@@ -75,8 +75,8 @@ class Transformer(nn.Module):
                  attention_dropout_rate, flatten_method):
         super(Transformer, self).__init__()
 
-        # 输入标准化（根据具体情况可能需要调整）
-        self.input_norm = nn.BatchNorm1d(n_inputs)  # 假设输入已经正确地转置
+        # 输入标准化
+        self.input_norm = nn.BatchNorm1d(n_inputs)
 
         # 位置嵌入
         self.pos_embs = PositionalEmbedding(n_inputs, embed_dim, dropout_rate)
