@@ -101,3 +101,4 @@ class Conv1dSamePadding(nn.Module):
         x_padded = F.pad(x, (padding_left, padding_right), "constant", 0)
 
         # 应用卷积
+        return self.conv(x_padded)
