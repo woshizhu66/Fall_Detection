@@ -1,14 +1,9 @@
-import numpy as np
-from collections import Counter
-from tqdm import tqdm
-from matplotlib import pyplot as plt
-from sklearn.metrics import classification_report
-
+"""
+This ResNet implementation is modified from https://github.com/hsd1503/resnet1d Shenda Hong, Oct 2019
+"""
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
 
 
 class MyConv1dPadSame(nn.Module):
@@ -16,7 +11,7 @@ class MyConv1dPadSame(nn.Module):
     extend nn.Conv1d to support SAME padding
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size, stride, groups=1):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, groups=1, bias=True):
         super(MyConv1dPadSame, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -28,7 +23,8 @@ class MyConv1dPadSame(nn.Module):
             out_channels=self.out_channels,
             kernel_size=self.kernel_size,
             stride=self.stride,
-            groups=self.groups)
+            groups=self.groups,
+            bias=bias)
 
     def forward(self, x):
         net = x
@@ -105,7 +101,8 @@ class BasicBlock(nn.Module):
             out_channels=out_channels,
             kernel_size=kernel_size,
             stride=self.stride,
-            groups=self.groups)
+            groups=self.groups,
+            bias=not use_bn)
 
         # the second conv
         self.bn2 = nn.BatchNorm1d(out_channels)
@@ -118,7 +115,7 @@ class BasicBlock(nn.Module):
             stride=1,
             groups=self.groups)
 
-        self.max_pool = MyMaxPool1dPadSame(kernel_size=self.stride)
+        self.max_pool = MyMaxPool1dPadSame(kernel_size=stride)
 
     def forward(self, x):
 
@@ -160,7 +157,7 @@ class BasicBlock(nn.Module):
         return out
 
 
-class ResNet1D(nn.Module):
+class ResNet1D2(nn.Module):
     """
 
     Input:
@@ -181,19 +178,18 @@ class ResNet1D(nn.Module):
 
     """
 
-    def __init__(self, in_channels, base_filters, kernel_size, stride, n_block, n_classes, flatten_method,
-                 groups=1, downsample_gap=2, increasefilter_gap=4, use_bn=True, use_do=True):
-        super(ResNet1D, self).__init__()
-
+    def __init__(self, in_channels, base_filters, kernel_size, stride, n_block, groups=1, downsample_gap=2,
+                 increasefilter_gap=4, use_bn=True, use_do=True):
+        super(ResNet1D2, self).__init__()
         self.n_block = n_block
         self.kernel_size = kernel_size
         self.stride = stride
         self.groups = groups
         self.use_bn = use_bn
         self.use_do = use_do
-        self.flatten_method = flatten_method
+
         self.downsample_gap = downsample_gap  # 2 for base model
-        self.increasefilter_gap = increasefilter_gap  # 4 for base model
+        self.increase_filter_gap = increasefilter_gap  # 4 for base model
 
         # first block
         self.first_block_conv = MyConv1dPadSame(in_channels=in_channels, out_channels=base_filters,
@@ -206,23 +202,17 @@ class ResNet1D(nn.Module):
         self.basicblock_list = nn.ModuleList()
         for i_block in range(self.n_block):
             # is_first_block
-            if i_block == 0:
-                is_first_block = True
-            else:
-                is_first_block = False
+            is_first_block = i_block == 0
             # downsample at every self.downsample_gap blocks
-            if i_block % self.downsample_gap == 1:
-                downsample = True
-            else:
-                downsample = False
+            downsample = i_block % self.downsample_gap == 1
             # in_channels and out_channels
             if is_first_block:
                 in_channels = base_filters
                 out_channels = in_channels
             else:
                 # increase filters at every self.increasefilter_gap blocks
-                in_channels = int(base_filters * 2 ** ((i_block - 1) // self.increasefilter_gap))
-                if (i_block % self.increasefilter_gap == 0) and (i_block != 0):
+                in_channels = int(base_filters * 2 ** ((i_block - 1) // self.increase_filter_gap))
+                if (i_block % self.increase_filter_gap == 0) and (not is_first_block):
                     out_channels = in_channels * 2
                 else:
                     out_channels = in_channels
@@ -241,36 +231,79 @@ class ResNet1D(nn.Module):
 
         # final prediction
         self.final_bn = nn.BatchNorm1d(out_channels)
-        self.final_relu = nn.ReLU(inplace=True)
-        self.dense = nn.Linear(out_channels, n_classes)
+        self.final_relu = nn.ReLU()
 
     def forward(self, x):
-        x = x.transpose(1, 2)
-        out = x
-
         # first conv
-        out = self.first_block_conv(out)
+        x = self.first_block_conv(x)
         if self.use_bn:
-            out = self.first_block_bn(out)
-        out = self.first_block_relu(out)
+            x = self.first_block_bn(x)
+        x = self.first_block_relu(x)
 
         # residual blocks, every block has two conv
         for i_block in range(self.n_block):
-            net = self.basicblock_list[i_block]
-            out = net(out)
+            x = self.basicblock_list[i_block](x)
 
         # final prediction
         if self.use_bn:
-            out = self.final_bn(out)
-        out = self.final_relu(out)
-        # Flatten the output based on the specified method
-        if self.flatten_method == "last":
-            flattened = out[:, :, -1]
-        elif self.flatten_method == "mean":
-            flattened = out.mean(dim=-1)
-        elif self.flatten_method == "max":
-            flattened = out.max(dim=-1)[0]
+            x = self.final_bn(x)
+        x = self.final_relu(x)
 
-        out = self.dense(flattened)
+        return x
+
+
+class MSResNet1D(nn.Module):
+    def __init__(self, resnets: nn.ModuleDict,flatten_method,
+                 in_channels, in_resnet_channels, n_outputs, first_kernel, drop_rate=0.5):
+        super().__init__()
+        self.first_block = nn.Sequential(
+            nn.Conv1d(in_channels, in_resnet_channels, kernel_size=first_kernel, padding='same'),
+            nn.BatchNorm1d(in_resnet_channels),
+            nn.ReLU(),
+            nn.Dropout(drop_rate)
+        )
+        self.flatten_method = flatten_method
+        self.resnets = resnets
+        self.fc = nn.Linear(384, n_outputs)
+    def forward(self, x):
+        x = x.transpose(1, 2)
+        x = self.first_block(x)
+        x_scales = [
+            self.resnets[key](x)
+            for key in self.resnets.keys()
+        ]
+        x_scales = torch.cat(x_scales, dim=1)
+        # Flatten the output based on the specified method
+        if self.flatten_method == "mean":
+            flattened = x_scales.mean(dim=-1)
+        elif self.flatten_method == "max":
+            flattened = x_scales.max(dim=-1)[0]
+
+        # Dense layer with softmax
+        out = self.fc(flattened)
 
         return out
+
+
+# if __name__ == '__main__':
+#     model = MSResNet1D(
+#         resnets=nn.ModuleDict({
+#             'resnet3': ResNet1D(in_channels=64, base_filters=64, kernel_size=3, n_block=6, stride=2),
+#             'resnet5': ResNet1D(in_channels=64, base_filters=64, kernel_size=5, n_block=6, stride=2),
+#             'resnet7': ResNet1D(in_channels=64, base_filters=64, kernel_size=7, n_block=6, stride=2),
+#         }),
+#         in_channels=3,
+#         in_resnet_channels=64,
+#         first_kernel=7
+#     )
+#     '''
+#     in_channels: dim of input, the same as n_channel
+#     base_filters: number of filters in the first several Conv layer, it will double at every 4 layers
+#     kernel_size: width of kernel
+#     stride: stride of kernel moving
+#     groups: set larget to 1 as ResNeXt
+#     n_block: number of blocks
+#     '''
+#     data = torch.ones([8, 3, 128])
+#     output = model(data)
+#     _ = 1

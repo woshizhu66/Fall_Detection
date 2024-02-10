@@ -8,10 +8,11 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-
-from kfall_classification_no_testset import compute_mean_std
-from utils.cnn_gru import CnnGru
+from utils.multichannel_cnn_gru import CnnGru
 from utils.multihead_tcn import MultiHeadTCN
+from utils.net1d import Net1D
+from utils.resnet1d import ResNet1D
+from utils.singlechannel_cnn_gru import SingleCnnGru
 from utils.tcn import TCN
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
@@ -32,7 +33,7 @@ def load_dataset_new(root_dir, device):
     return train, valid, test
 
 
-def load_dataset_cmdfall(root_dir, device):
+def load_dataset_cmdfall_raw(root_dir, device):
     with open(root_dir, 'rb') as F:
         dataset = pickle.load(F)
     new_data_dict = {}
@@ -57,7 +58,80 @@ def load_dataset_cmdfall(root_dir, device):
     return train, valid, test
 
 
-def load_dataset_upfall(root_dir, device):
+def load_dataset_cmdfall_norm(root_dir, device):
+    with open(root_dir, 'rb') as F:
+        dataset = pickle.load(F)
+    new_data_dict = {}
+    for set_name in ['train', 'valid', 'test']:
+        new_data_dict[set_name] = {}
+        for sensor_name in dataset[set_name]:
+            # Initialize with existing class 0 data, or an empty array
+            combined_class_1 = np.empty((0, 200, 3))
+            combined_class_0 = np.empty((0, 200, 3))
+            # Combine data for class IDs 1, 2, 3, 4 into class ID 0
+            for class_id in dataset[set_name][sensor_name].keys():
+                if class_id in range(8):
+                    combined_class_1 = np.concatenate((combined_class_1, dataset[set_name][sensor_name][class_id]))
+
+                else:
+                    combined_class_0 = np.concatenate((combined_class_0, dataset[set_name][sensor_name][class_id]))
+            # Assign the combined data back to class ID 0
+            new_data_dict[set_name][sensor_name] = {0: combined_class_0, 1: combined_class_1}
+
+            for num in [0, 1]:
+                acc_x = new_data_dict[set_name][sensor_name][num][:, :, 0]
+                acc_y = new_data_dict[set_name][sensor_name][num][:, :, 1]
+                acc_z = new_data_dict[set_name][sensor_name][num][:, :, 2]
+
+                norm = np.sqrt(acc_x ** 2 + acc_y ** 2 + acc_z ** 2)
+
+                new_data_dict[set_name][sensor_name][num] = norm
+
+    train = new_data_dict['train'][device]
+    valid = new_data_dict['valid'][device]
+    test = new_data_dict['test'][device]
+    return train, valid, test
+
+
+def load_dataset_cmdfall_raw_norm(root_dir, device):
+    with open(root_dir, 'rb') as F:
+        dataset = pickle.load(F)
+    new_data_dict = {}
+    for set_name in ['train', 'valid', 'test']:
+        new_data_dict[set_name] = {}
+        for sensor_name in dataset[set_name]:
+            # Initialize with existing class 0 data, or an empty array
+            combined_class_1 = np.empty((0, 200, 3))
+            combined_class_0 = np.empty((0, 200, 3))
+            # Combine data for class IDs 1, 2, 3, 4 into class ID 0
+            for class_id in dataset[set_name][sensor_name].keys():
+                if class_id in range(8):
+                    combined_class_1 = np.concatenate((combined_class_1, dataset[set_name][sensor_name][class_id]))
+
+                else:
+                    combined_class_0 = np.concatenate((combined_class_0, dataset[set_name][sensor_name][class_id]))
+            # Assign the combined data back to class ID 0
+            new_data_dict[set_name][sensor_name] = {0: combined_class_0, 1: combined_class_1}
+
+            for num in [0, 1]:
+                data = new_data_dict[set_name][sensor_name][num]
+
+                acc_x = data[:, :, 0]
+                acc_y = data[:, :, 1]
+                acc_z = data[:, :, 2]
+
+                norm = np.sqrt(acc_x ** 2 + acc_y ** 2 + acc_z ** 2)
+                norm = norm.reshape(norm.shape[0], norm.shape[1], 1)
+                expanded_data = np.concatenate((data, norm), axis=2)
+                new_data_dict[set_name][sensor_name][num] = expanded_data
+
+    train = new_data_dict['train'][device]
+    valid = new_data_dict['valid'][device]
+    test = new_data_dict['test'][device]
+    return train, valid, test
+
+
+def load_dataset_upfall_raw(root_dir, device):
     with open(root_dir, 'rb') as F:
         dataset = pickle.load(F)
     new_data_dict = {}
@@ -76,6 +150,79 @@ def load_dataset_upfall(root_dir, device):
                     combined_class_0 = np.concatenate((combined_class_0, dataset[set_name][sensor_name][class_id]))
             # Assign the combined data back to class ID 0
             new_data_dict[set_name][sensor_name] = {0: combined_class_0, 1: combined_class_1}
+    train = new_data_dict['train'][device]
+    valid = new_data_dict['valid'][device]
+    test = new_data_dict['test'][device]
+    return train, valid, test
+
+
+def load_dataset_upfall_norm(root_dir, device):
+    with open(root_dir, 'rb') as F:
+        dataset = pickle.load(F)
+    new_data_dict = {}
+    for set_name in ['train', 'valid', 'test']:
+        new_data_dict[set_name] = {}
+        for sensor_name in dataset[set_name]:
+            # Initialize with existing class 0 data, or an empty array
+            combined_class_1 = np.empty((0, 200, 3))
+            combined_class_0 = np.empty((0, 200, 3))
+            # Combine data for class IDs 1, 2, 3, 4 into class ID 0
+            for class_id in dataset[set_name][sensor_name].keys():
+                if class_id in range(5):
+                    combined_class_1 = np.concatenate((combined_class_1, dataset[set_name][sensor_name][class_id]))
+
+                else:
+                    combined_class_0 = np.concatenate((combined_class_0, dataset[set_name][sensor_name][class_id]))
+            # Assign the combined data back to class ID 0
+            new_data_dict[set_name][sensor_name] = {0: combined_class_0, 1: combined_class_1}
+
+            for num in [0, 1]:
+                acc_x = new_data_dict[set_name][sensor_name][num][:, :, 0]
+                acc_y = new_data_dict[set_name][sensor_name][num][:, :, 1]
+                acc_z = new_data_dict[set_name][sensor_name][num][:, :, 2]
+
+                norm = np.sqrt(acc_x ** 2 + acc_y ** 2 + acc_z ** 2)
+
+                new_data_dict[set_name][sensor_name][num] = norm
+
+    train = new_data_dict['train'][device]
+    valid = new_data_dict['valid'][device]
+    test = new_data_dict['test'][device]
+    return train, valid, test
+
+
+def load_dataset_upfall_raw_norm(root_dir, device):
+    with open(root_dir, 'rb') as F:
+        dataset = pickle.load(F)
+    new_data_dict = {}
+    for set_name in ['train', 'valid', 'test']:
+        new_data_dict[set_name] = {}
+        for sensor_name in dataset[set_name]:
+            # Initialize with existing class 0 data, or an empty array
+            combined_class_1 = np.empty((0, 200, 3))
+            combined_class_0 = np.empty((0, 200, 3))
+            # Combine data for class IDs 1, 2, 3, 4 into class ID 0
+            for class_id in dataset[set_name][sensor_name].keys():
+                if class_id in range(5):
+                    combined_class_1 = np.concatenate((combined_class_1, dataset[set_name][sensor_name][class_id]))
+
+                else:
+                    combined_class_0 = np.concatenate((combined_class_0, dataset[set_name][sensor_name][class_id]))
+            # Assign the combined data back to class ID 0
+            new_data_dict[set_name][sensor_name] = {0: combined_class_0, 1: combined_class_1}
+
+            for num in [0, 1]:
+                data = new_data_dict[set_name][sensor_name][num]
+
+                acc_x = data[:, :, 0]
+                acc_y = data[:, :, 1]
+                acc_z = data[:, :, 2]
+
+                norm = np.sqrt(acc_x ** 2 + acc_y ** 2 + acc_z ** 2)
+                norm = norm.reshape(norm.shape[0], norm.shape[1], 1)
+                expanded_data = np.concatenate((data, norm), axis=2)
+                new_data_dict[set_name][sensor_name][num] = expanded_data
+
     train = new_data_dict['train'][device]
     valid = new_data_dict['valid'][device]
     test = new_data_dict['test'][device]
@@ -211,9 +358,26 @@ def plot_confusion(y_true, y_pred, labels):
     return matrix
 
 
+def compute_mean_std(train_loader):
+    mean = 0.0
+    var = 0.0
+    total_samples = 0
+    for data, _ in train_loader:
+        batch_samples = data.size(0)
+        mean += data.mean([0, 1])
+        var += data.var([0, 1], unbiased=False)
+        total_samples += batch_samples
+
+    mean /= total_samples
+    var /= total_samples
+    std = torch.sqrt(var)
+
+    return mean, std
+
+
 class ClassificationModel:
     def __init__(self, dataset_path, batch_size_train, batch_size_valid, batch_size_test, position, model_type,
-                 input_size, output_size,
+                 input_size, output_size, dataset_name, feature_set,
                  num_channels, flatten_method, kernel_size, kernel_size1, kernel_size2, dropout, learning_rate,
                  num_epochs, model_save_path, augmenter, aug_name):
         """
@@ -243,6 +407,7 @@ class ClassificationModel:
         self.kernel_size2 = kernel_size2
         self.augmenter = augmenter
         self.dataset_path = dataset_path
+        self.feature_set = feature_set
         self.batch_size_train = batch_size_train
         self.batch_size_valid = batch_size_valid
         self.batch_size_test = batch_size_test
@@ -258,6 +423,7 @@ class ClassificationModel:
         self.aug_name = aug_name
         self.model_type = model_type
         self.model = self.initialize_model()
+        self.dataset_name = dataset_name
 
     def initialize_model(self):
         if self.model_type == 'TCN':
@@ -269,6 +435,10 @@ class ClassificationModel:
         elif self.model_type == 'CnnGru':
             self.num_channels = None
             return CnnGru(self.input_size, self.output_size, self.num_channels, self.dropout, self.flatten_method)
+        elif self.model_type == 'SingleCnnGru':
+            self.num_channels = None
+            return SingleCnnGru(self.input_size, self.output_size, self.num_channels, self.dropout, 3,
+                                self.flatten_method)
         elif self.model_type == 'Transformer':
             self.learning_rate = 0.0001
             return Transformer(self.input_size, 6, 128, 256, 8, self.output_size, self.dropout, self.dropout,
@@ -276,6 +446,12 @@ class ClassificationModel:
         elif self.model_type == 'Transformer_2021':
             self.learning_rate = 0.0001
             return IMUTransformerEncoder(self.input_size, self.output_size, 200, "true", 64, 0.1)
+        elif self.model_type == 'Resnet1D':
+            return ResNet1D(in_channels=self.input_size, base_filters=128, kernel_size=9, n_block=6, stride=4,
+                            flatten_method=self.flatten_method, n_classes=self.output_size)
+        elif self.model_type == 'Net1D':
+            return Net1D(in_channels=self.input_size, base_filters=16, ratio=1.0, kernel_size=16, stride=2,
+                         flatten_method=self.flatten_method, n_classes=self.output_size)
 
     def run(self):
         # # Load data
@@ -293,8 +469,21 @@ class ClassificationModel:
         #     train, valid, test = load_dataset_with_trajectory_raw(self.dataset_path)
         # elif self.load_method == 'acc_euler_gyr_norm':
         #     train, valid, test = load_dataset_with_acc_euler_gyr_norm(self.dataset_path)
-
-        train, valid, test = load_dataset_upfall(self.dataset_path, self.position)
+        if self.feature_set == "acc":
+            if self.dataset_name == "cmdfall":
+                train, valid, test = load_dataset_cmdfall_raw(self.dataset_path, self.position)
+            elif self.dataset_name == "upfall":
+                train, valid, test = load_dataset_upfall_raw(self.dataset_path, self.position)
+        elif self.feature_set == "norm":
+            if self.dataset_name == "cmdfall":
+                train, valid, test = load_dataset_cmdfall_norm(self.dataset_path, self.position)
+            elif self.dataset_name == "upfall":
+                train, valid, test = load_dataset_upfall_norm(self.dataset_path, self.position)
+        elif self.feature_set == "acc_norm":
+            if self.dataset_name == "cmdfall":
+                train, valid, test = load_dataset_cmdfall_raw_norm(self.dataset_path, self.position)
+            elif self.dataset_name == "upfall":
+                train, valid, test = load_dataset_upfall_raw_norm(self.dataset_path, self.position)
         # train = load_dataset_with_raw(self.dataset_path + "/train")
         # valid = load_dataset_with_raw(self.dataset_path + "/valid")
         # test = load_dataset_with_raw(self.dataset_path + "/test")
@@ -309,7 +498,6 @@ class ClassificationModel:
         test_set = BasicArrayDataset(test)
         test_loader = DataLoader(test_set, batch_size=self.batch_size_test, shuffle=False)
 
-     
         mean, std = compute_mean_std(train_loader)
 
         if hasattr(self.model, 'input_norm'):
@@ -352,6 +540,9 @@ class ClassificationModel:
             train_loss = 0
             pbar = tqdm(total=len(train_loader), ncols=0)
             for x, y in train_loader:
+                if self.feature_set == 'norm':
+                    x = x.unsqueeze(-1)
+
                 # Move the inputs and labels to the GPU if available
                 x = x.to(device)
                 y = y.to(device)
@@ -383,6 +574,8 @@ class ClassificationModel:
 
             with torch.no_grad():
                 for x, y in valid_loader:
+                    if self.feature_set == 'norm':
+                        x = x.unsqueeze(-1)
                     x = x.to(device)
                     y = y.to(device)
 
@@ -433,11 +626,11 @@ class ClassificationModel:
         # Convert metrics dictionary to DataFrame and save as CSV
         df_metrics = pd.DataFrame(metrics)
 
-        csv_file_name = f'./upfall_train_records/{self.model_type}_training_metrics_{self.aug_name}.csv'
+        csv_file_name = f'./{self.dataset_name}_train_records/{self.model_type}_training_metrics_{self.aug_name}.csv'
 
-        if not os.path.exists('./upfall_train_records'):
+        if not os.path.exists(f'./{self.dataset_name}_train_records'):
             # If the directory doesn't exist, create it
-            os.makedirs('./upfall_train_records')
+            os.makedirs(f'./{self.dataset_name}_train_records')
         df_metrics.to_csv(csv_file_name)
 
         model = self.initialize_model()
@@ -452,6 +645,8 @@ class ClassificationModel:
 
         with torch.no_grad():
             for x, y in test_loader:
+                if self.feature_set == 'norm':
+                    x = x.unsqueeze(-1)
                 x = x.to(device)
                 y = y.to(device)
 
@@ -496,91 +691,137 @@ class ClassificationModel:
 
 
 if __name__ == "__main__":
-    root_dir = './cmdfall.pkl'
-    model_types = ["TCN", "MultiHeadTCN", "CnnGru", "Transformer"]
+    model_types = ["Resnet1D", "Net1D", "TCN", "MultiHeadTCN", "CnnGru", "Transformer", "SingleCnnGru"]
+    single_branch_model_types = ["Resnet1D", "Net1D", "TCN", "Transformer", "SingleCnnGru"]
+    multi_branch_model_types = ["MultiHeadTCN", "CnnGru"]
+    datasets = ["cmdfall", "upfall"]
 
     '''
-        Train model with different augmentations
+        Train single-branch models with different flatten methods
     '''
 
-    # augmentations = {
-    # 'None': None
-    # 'timewarp': aug.Timewarp(sigma=0.2, knot=4, p=0.5),
-    # 'jitter': aug.Jitter(sigma=0.05, p=0.5),
-    # 'scale': aug.Scale(sigma=0.1, p=0.5)
-    # 'magnitudeWarp': aug.MagnitudeWarp(sigma=0.2, knot=4, p=0.5),
-    # 'rotation': aug.Rotation(angle_range=180, p=0.5),
-    # 'permutation': aug.Permutation(n_perm=4, min_seg_length=10, p=0.5),
-    # 'randSample': aug.RandSample(n_sample=150, p=0.5),
-    # }
-
-    # for name, augmentation in augmentations.items():
-    #     augmenter = aug.Augmenter([augmentation])
-    #     test_metrics = {
-    #         'window_size': [],
-    #         'test_accuracy': [],
-    #         'test_F1': [],
-    #         'test_TPR': [],
-    #         'test_FPR': [],
-    #         'FP': [],
-    #         'FN': [],
-    #         'TP': [],
-    #         'TN': []
-    #     }
+    # for dataset in datasets:
+    #     root_dir = f'./datasets/{dataset}.pkl'
+    #     records = pd.DataFrame(columns=['model', 'flatten', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
+    #                                     'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
+    #                                     'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
+    #                                     'test_FPR', 'test_F1'])
+    #     row = 0
+    #     for model_type in single_branch_model_types:
+    #         if model_type not in ["TCN", "SingleCnnGru", "CnnGru"]:
+    #             flatten_methods = ["mean", "max"]
+    #         else:
+    #             flatten_methods = ["last", "mean", "max"]
+    #         for method in flatten_methods:
+    #             # Create a dictionary to store the metrics during testing
+    #             record = ClassificationModel(
+    #                 dataset_name=dataset,
+    #                 dataset_path=root_dir,
+    #                 model_type=model_type,
+    #                 batch_size_train=16,
+    #                 batch_size_valid=32,
+    #                 batch_size_test=32,
+    #                 position='waist',
+    #                 input_size=3,
+    #                 output_size=1,
+    #                 flatten_method=method,  # Changed to the current flatten method
+    #                 num_channels=(64,) * 5 + (128,) * 2,
+    #                 kernel_size=2,  # 2
+    #                 kernel_size1=2,  # 2
+    #                 kernel_size2=3,  # 3
+    #                 dropout=0.5,
+    #                 learning_rate=0.001,
+    #                 num_epochs=20,
+    #                 model_save_path=f"./models/{dataset}/flatten/{model_type}/{method}",
+    #                 # Changed to reflect the flatten method
+    #                 augmenter=None,
+    #                 aug_name=method
+    #             ).run()
     #
+    #             records = pd.concat([records, pd.DataFrame([record])], ignore_index=True)
+    #             records.iloc[row, 0] = model_type
+    #             records.iloc[row, 1] = method
     #
-    #     # Create a dictionary to store the metrics during testing
-    #     window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
-    #         dataset_path=root_dir,
-    #         batch_size_train=16,
-    #         batch_size_valid=32,
-    #         batch_size_test=32,
-    #         input_size=9,
-    #         output_size=1,
-    #         flatten_method="mean",
-    #         num_channels=(64,) * 5 + (128,) * 2,
-    #         load_method='raw',
-    #         kernel_size=2,
-    #         dropout=0.5,
-    #         learning_rate=0.01,
-    #         num_epochs=30,
-    #         model_save_path=f"./new_cla_model_{name}",
-    #         augmenter=augmenter,
-    #         aug_name=name
-    #     ).run()
+    #             row += 1
     #
-    #     test_metrics['window_size'].append(window_size)
-    #     test_metrics['test_accuracy'].append(accuracy)
-    #     test_metrics['test_F1'].append(F1)
-    #     test_metrics['test_TPR'].append(TPR)
-    #     test_metrics['test_FPR'].append(FPR)
-    #     test_metrics['FP'].append(FP)
-    #     test_metrics['FN'].append(FN)
-    #     test_metrics['TP'].append(FP)
-    #     test_metrics['TN'].append(FP)
-    #     df_metrics = pd.DataFrame(test_metrics)
-    #     df_metrics.to_csv(f'./cla_test_metrics_{name}.csv', index=False)
+    #     records.to_csv(f'./experiment_results/flatten/{dataset}.csv', index=False)
 
     '''
-        Train model with different flatten methods
+        Train multi-branch models with 'mean' flatten method
     '''
-    flatten_methods = ["mean", "max"]
-    records = pd.DataFrame(columns=['model', 'flatten', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
-                                    'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
-                                    'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
-                                    'test_FPR', 'test_F1'])
-    row = 0
-    for model_type in model_types:
-        for method in flatten_methods:
+
+    # for dataset in datasets:
+    #     root_dir = f'./datasets/{dataset}.pkl'
+    #     records = pd.DataFrame(columns=['model', 'flatten', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
+    #                                     'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
+    #                                     'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
+    #                                     'test_FPR', 'test_F1'])
+    #     row = 0
+    #     for model_type in multi_branch_model_types:
+    #         # Create a dictionary to store the metrics during testing
+    #         record = ClassificationModel(
+    #             dataset_name=dataset,
+    #             dataset_path=root_dir,
+    #             model_type=model_type,
+    #             batch_size_train=16,
+    #             batch_size_valid=32,
+    #             batch_size_test=32,
+    #             position='waist',
+    #             input_size=3,
+    #             output_size=1,
+    #             flatten_method="mean",  # Changed to the current flatten method
+    #             num_channels=(64,) * 5 + (128,) * 2,
+    #             kernel_size=2,  # 2
+    #             kernel_size1=2,  # 2
+    #             kernel_size2=3,  # 3
+    #             dropout=0.5,
+    #             learning_rate=0.001,
+    #             num_epochs=30,
+    #             model_save_path=f"./models/{dataset}/multibranch/{model_type}/mean",
+    #             # Changed to reflect the flatten method
+    #             augmenter=None,
+    #             aug_name="mean"
+    #         ).run()
+    #
+    #         records = pd.concat([records, pd.DataFrame([record])], ignore_index=True)
+    #         records.iloc[row, 0] = model_type
+    #         records.iloc[row, 1] = "mean"
+    #
+    #         row += 1
+    #
+    #     records.to_csv(f'./experiment_results/multibranch/{dataset}_max.csv', index=False)
+
+    '''
+        Train model with different feature sets
+    '''
+    #
+    for dataset in ["cmdfall", "upfall"]:
+        root_dir = f'./datasets/{dataset}.pkl'
+        records = pd.DataFrame(columns=['model', 'flatten', 'feature_set', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
+                                        'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
+                                        'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
+                                        'test_FPR', 'test_F1'])
+        row = 0
+        model_type = "Resnet1D"
+        method = 'mean'
+        for feature_set in ['norm', 'norm', 'acc_norm']:
+            if feature_set == 'norm':
+                input_size = 1
+            elif feature_set == 'acc':
+                input_size = 3
+            elif feature_set == 'acc_norm':
+                input_size = 4
             # Create a dictionary to store the metrics during testing
             record = ClassificationModel(
+                dataset_name=dataset,
                 dataset_path=root_dir,
                 model_type=model_type,
+                feature_set=feature_set,
                 batch_size_train=16,
                 batch_size_valid=32,
                 batch_size_test=32,
                 position='waist',
-                input_size=3,
+                input_size=input_size,
                 output_size=1,
                 flatten_method=method,  # Changed to the current flatten method
                 num_channels=(64,) * 5 + (128,) * 2,
@@ -589,8 +830,8 @@ if __name__ == "__main__":
                 kernel_size2=3,  # 3
                 dropout=0.5,
                 learning_rate=0.001,
-                num_epochs=10,
-                model_save_path=f"./models/upfall/flatten/{model_type}/{method}",
+                num_epochs=20,
+                model_save_path=f"./models/{dataset}/feature/{model_type}/{method}",
                 # Changed to reflect the flatten method
                 augmenter=None,
                 aug_name=method
@@ -599,78 +840,115 @@ if __name__ == "__main__":
             records = pd.concat([records, pd.DataFrame([record])], ignore_index=True)
             records.iloc[row, 0] = model_type
             records.iloc[row, 1] = method
+            records.iloc[row, 2] = feature_set
 
             row += 1
 
-    records.to_csv(f'./experiment_results/flatten/upfall.csv', index=False)
-    # '''
-    #     Train model with different feature combinations
-    # '''
-    # root_dir = 'D:/Repository/master/Processed_Dataset/KFall'
-    # #
-    # # load_methods = ['raw', 'acc', 'trajectory_acc', 'euler_acc', 'trajectory_acc_norm','trajectory_raw', 'acc_euler_gyr_norm']
-    # load_methods = ['acc']
-    # augmenter = aug.Augmenter([aug.Timewarp(sigma=0.2, knot=4, p=0.5)])
-    # test_metrics = {
-    #     'load_method': [],
-    #     'window_size': [],
-    #     'test_accuracy': [],
-    #     'test_F1': [],
-    #     'test_TPR': [],
-    #     'test_FPR': [],
-    #     'FP': [],
-    #     'FN': [],
-    #     'TP': [],
-    #     'TN': []
+        records.to_csv(f'./experiment_results/feature/{dataset}.csv', index=False)
+
+
+    '''
+        Train model with different feature sets
+    '''
+    # augmentations = {
+    # 'timewarp': aug.Timewarp(sigma=0.2, knot=4, p=0.5),
+    # 'jitter': aug.Jitter(sigma=0.05, p=0.5),
+    # 'scale': aug.Scale(sigma=0.1, p=0.5),
+    # 'magnitudeWarp': aug.MagnitudeWarp(sigma=0.2, knot=4, p=0.5),
+    # 'rotation': aug.Rotation(angle_range=180, p=0.5),
+    # 'permutation': aug.Permutation(n_perm=4, min_seg_length=10, p=0.5),
+    # 'randSample': aug.RandSample(n_sample=150, p=0.5),
     # }
+    # for dataset in datasets:
+    #     root_dir = f'./datasets/{dataset}.pkl'
+    #     records = pd.DataFrame(columns=['model', 'flatten', 'augmentation', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
+    #                                     'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
+    #                                     'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
+    #                                     'test_FPR', 'test_F1'])
+    #     row = 0
+    #     model_type = "Resnet1D"
+    #     method = 'mean'
+    #     for name, augmentation in augmentations.items():
+    #         augmenter = aug.Augmenter([augmentation])
     #
-    # for load in load_methods:
+    #         # Create a dictionary to store the metrics during testing
+    #         record = ClassificationModel(
+    #             dataset_name=dataset,
+    #             dataset_path=root_dir,
+    #             model_type=model_type,
+    #             feature_set='acc',
+    #             batch_size_train=16,
+    #             batch_size_valid=32,
+    #             batch_size_test=32,
+    #             position='waist',
+    #             input_size=3,
+    #             output_size=1,
+    #             flatten_method=method,  # Changed to the current flatten method
+    #             num_channels=(64,) * 5 + (128,) * 2,
+    #             kernel_size=2,  # 2
+    #             kernel_size1=2,  # 2
+    #             kernel_size2=3,  # 3
+    #             dropout=0.5,
+    #             learning_rate=0.001,
+    #             num_epochs=20,
+    #             model_save_path=f"./models/{dataset}/augmentation/{model_type}/{method}",
+    #             # Changed to reflect the flatten method
+    #             augmenter=augmenter,
+    #             aug_name=name
+    #         ).run()
     #
-    #     if load == 'raw':
-    #         input_size = 9
-    #     elif load == 'acc':
-    #         input_size = 3
-    #     elif load == 'trajectory_acc':
-    #         input_size = 6
-    #     elif load == 'euler_acc':
-    #         input_size = 6
-    #     elif load == 'trajectory_acc_norm':
-    #         input_size = 4
-    #     elif load == 'trajectory_raw':
-    #         input_size = 12
-    #     elif load == 'acc_euler_gyr_norm':
-    #         input_size = 7
+    #         records = pd.concat([records, pd.DataFrame([record])], ignore_index=True)
+    #         records.iloc[row, 0] = model_type
+    #         records.iloc[row, 1] = method
+    #         records.iloc[row, 2] = name
     #
-    #     folder_path = os.path.join(root_dir, 'KFall_window_sec4')
-    #     # Create a dictionary to store the metrics during testing
-    #     window_size, accuracy, F1, TPR, FPR, FP, FN, TP, TN = ClassificationModel(
-    #         dataset_path=folder_path,
-    #         batch_size_train=16,
-    #         batch_size_valid=32,
-    #         batch_size_test=32,
-    #         input_size=input_size,
-    #         output_size=1,
-    #         flatten_method="mean",
-    #         num_channels=(64,) * 5 + (128,) * 2,
-    #         kernel_size=2,
-    #         dropout=0.5,
-    #         load_method=load,
-    #         learning_rate=0.01,
-    #         num_epochs=20,
-    #         model_save_path=f"./new_cla_model_{load}",
-    #         augmenter=None,
-    #         aug_name=load
-    #     ).run()
-    #     test_metrics['load_method'].append(load)
-    #     test_metrics['window_size'].append(window_size)
-    #     test_metrics['test_accuracy'].append(accuracy)
-    #     test_metrics['test_F1'].append(F1)
-    #     test_metrics['test_TPR'].append(TPR)
-    #     test_metrics['test_FPR'].append(FPR)
-    #     test_metrics['FP'].append(FP)
-    #     test_metrics['FN'].append(FN)
-    #     test_metrics['TP'].append(FP)
-    #     test_metrics['TN'].append(FP)
-    #     print(test_metrics)
-    # df_metrics = pd.DataFrame(test_metrics)
-    # df_metrics.to_csv(f'./cla_test_metrics_load_methods.csv', index=False)
+    #         row += 1
+    #
+    #     records.to_csv(f'./experiment_results/augmentation/{dataset}.csv', index=False)
+
+    '''
+        Train model with different kernel size in single cnn-gru
+    '''
+    # flatten_methods = ["last", "mean", "max"]
+    #
+    # for dataset in datasets:
+    #     root_dir = f'./datasets/{dataset}.pkl'
+    #     row = 0
+    #     records = pd.DataFrame(columns=['model', 'flatten', 'train_loss', 'valid_loss', 'valid_accuracy', 'valid_f1',
+    #                                     'valid_TPR', 'valid_FPR', 'valid_FP', 'valid_FN', 'valid_TP', 'valid_TN',
+    #                                     'test_Accuracy', 'test_TN', 'test_FP', 'test_FN', 'test_TP', 'test_TPR',
+    #                                     'test_FPR', 'test_F1'])
+    #     for size in [3, 5, 7]:
+    #         for method in flatten_methods:
+    #             # Create a dictionary to store the metrics during testing
+    #             record = ClassificationModel(
+    #                 dataset_name=dataset,
+    #                 dataset_path=root_dir,
+    #                 model_type="SingleCnnGru",
+    #                 batch_size_train=16,
+    #                 batch_size_valid=32,
+    #                 batch_size_test=32,
+    #                 position='waist',
+    #                 input_size=3,
+    #                 output_size=1,
+    #                 flatten_method=method,  # Changed to the current flatten method
+    #                 num_channels=(64,) * 5 + (128,) * 2,
+    #                 kernel_size=size,  # 2
+    #                 kernel_size1=2,  # 2
+    #                 kernel_size2=3,  # 3
+    #                 dropout=0.5,
+    #                 learning_rate=0.001,
+    #                 num_epochs=30,
+    #                 model_save_path=f"./models/{dataset}/flatten/SingleCnnGru/size{size}_{method}",
+    #                 # Changed to reflect the flatten method
+    #                 augmenter=None,
+    #                 aug_name=method
+    #             ).run()
+    #
+    #             records = pd.concat([records, pd.DataFrame([record])], ignore_index=True)
+    #             records.iloc[row, 0] = "SingleCnnGru"
+    #             records.iloc[row, 1] = method
+    #
+    #             row += 1
+    #
+    #     records.to_csv(f'./experiment_results/flatten/{dataset}_single_cnn_gru.csv', index=False)

@@ -9,18 +9,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 
-class MyDataset(Dataset):
-    def __init__(self, data, label):
-        self.data = data
-        self.label = label
-
-    def __getitem__(self, index):
-        return (torch.tensor(self.data[index], dtype=torch.float), torch.tensor(self.label[index], dtype=torch.long))
-
-    def __len__(self):
-        return len(self.data)
-
-
 class MyConv1dPadSame(nn.Module):
     """
     extend nn.Conv1d to support SAME padding
@@ -316,8 +304,9 @@ class Net1D(nn.Module):
 
     """
 
-    def __init__(self, in_channels, base_filters, ratio, filter_list, m_blocks_list, kernel_size, stride, groups_width,
-                 n_classes, use_bn=True, use_do=True):
+    def __init__(self, in_channels, base_filters, ratio,  kernel_size, stride, n_classes,
+                 flatten_method, filter_list=[64, 160, 400], m_blocks_list=[2, 3, 4],
+                 groups_width=16, use_bn=True, use_do=True):
         super(Net1D, self).__init__()
 
         self.in_channels = in_channels
@@ -332,7 +321,7 @@ class Net1D(nn.Module):
         self.n_classes = n_classes
         self.use_bn = use_bn
         self.use_do = use_do
-
+        self.flatten_method = flatten_method
         # first conv
         self.first_conv = MyConv1dPadSame(
             in_channels=in_channels,
@@ -367,7 +356,7 @@ class Net1D(nn.Module):
         self.dense = nn.Linear(in_channels, n_classes)
 
     def forward(self, x):
-
+        x = x.transpose(1, 2)
         out = x
 
         # first conv
